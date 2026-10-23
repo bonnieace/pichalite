@@ -31,7 +31,7 @@ jobs:
         run: |
           mkdir -p target/jvm
           javac -d target/jvm android/app/src/main/java/ke/co/pichalite/{PichaRuntime,NativeJobs}.java scripts/JniSmoke.java
-          java -Xcheck:jni -Djava.library.path=target/debug -cp target/jvm JniSmoke target/jni-smoke
+          TOKIO_WORKER_THREADS=1 java -Xcheck:jni -Djava.library.path=target/debug -cp target/jvm JniSmoke target/jni-smoke
   android:
     runs-on: ubuntu-latest
     steps:

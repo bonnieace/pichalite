@@ -58,19 +58,10 @@ impl App for PichaApp {
                     .with_config(QueueConfig::default().queue(QUEUE).batch_size(1))
                     .poll_with_interval(Duration::from_millis(300));
                 let control = WorkerContext::new("pichalite-local");
-                *engine.worker.lock().unwrap() = Some(control.clone());
                 let worker = WorkerBuilder::new(control.clone())
                     .backend(backend)
                     .concurrency(1)
                     .data(engine.clone())
-                    .on_event({
-                        let weak = Arc::downgrade(&engine);
-                        move |worker, event| {
-                            if matches!(event, Event::Start) && weak.upgrade().is_some_and(|e| e.paused.load(Ordering::Acquire)) {
-                                let _ = worker.pause();
-                            }
-                        }
-                    })
                     .build(process_photo);
                 let run = worker.run();
                 tokio::pin!(run);
@@ -139,7 +130,6 @@ pub struct Engine {
     root: PathBuf,
     paused: AtomicBool,
     stopping: AtomicBool,
-    worker: Mutex<Option<WorkerContext>>,
     _lock: File,
 }
 
@@ -198,7 +188,6 @@ impl Engine {
             root,
             paused: AtomicBool::new(paused),
             stopping: AtomicBool::new(false),
-            worker: Mutex::new(None),
             _lock: lock,
         })
     }
@@ -335,14 +324,10 @@ impl Engine {
     pub async fn set_paused(&self, paused: bool) -> Result<(), AnyError> {
         sqlx::query("INSERT INTO settings(key,value) VALUES('paused',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(paused.to_string()).execute(&self.pool).await?;
         self.paused.store(paused, Ordering::Release);
-        let worker = self.worker.lock().unwrap().clone();
-        if let Some(worker) = worker {
-            if paused && worker.is_running() {
-                worker.pause()?;
-            } else if !paused && worker.is_paused() {
-                worker.resume()?;
-            }
-        }
+        // Keep the Apalis backend polling so an in-flight SQLite transaction
+        // can commit. Pausing WorkerContext can park a pending fetch future
+        // while it still owns the connection. process_photo gates CPU work on
+        // this persisted flag instead, without holding a database connection.
         Ok(())
     }
 
