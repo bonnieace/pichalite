@@ -102,7 +102,7 @@ python3 scripts/smoke.py
 # Desktop JVM: use a full JDK 17, not only a JRE.
 mkdir -p target/jvm
 javac -d target/jvm android/app/src/main/java/ke/co/pichalite/{PichaRuntime,NativeJobs}.java scripts/JniSmoke.java
-java -Xcheck:jni -Djava.library.path=target/debug -cp target/jvm JniSmoke target/jni-smoke
+TOKIO_WORKER_THREADS=1 java -Xcheck:jni -Djava.library.path=target/debug -cp target/jvm JniSmoke target/jni-smoke
 
 # With an emulator/phone connected, after building native libraries:
 cd android
@@ -130,9 +130,13 @@ device testing and richer photo controls.
 
 ## Submission
 
-Create a repository or fork, include this source and README, attach a short
-video/GIF of it working, and open a PR to the challenge repository. A PR has not
-been opened automatically. Record physical-phone results before claiming the
-real-device bonus; an emulator does not qualify for that bonus.
+[Draft competition PR #2](https://github.com/apalis-dev/rivium-challenge/pull/2)
+is open. Each fix is a separate commit on the same `pichalite` contribution
+branch. [CI passed](https://github.com/bonnieace/pichalite/actions/runs/39964221602),
+including the Android JNI queue restart test; see `docs/VALIDATION.md`.
+
+Attach a short video/GIF of the finished flow before marking the PR ready.
+Record physical-phone results before claiming the real-device bonus; an
+emulator does not qualify for that bonus.
 
 MIT licensed. See `LICENSE`.
