@@ -39,3 +39,6 @@ required-features = ["process"]
 
 [profile.release]
 codegen-units = 1
+
+[patch.crates-io]
+rivium-util = { path = "vendor/rivium-util" }

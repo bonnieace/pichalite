@@ -23,7 +23,8 @@ Originals remain untouched. There is no account, cloud backend or paid API.
 
 Install Rust via [rustup](https://rustup.rs). The checked-in toolchain file selects
 **1.94.0**. The current SQLite dependency needs 1.94 even though Rivium's own
-minimum is 1.92.
+minimum is 1.92. The vendored Rivium utility patch keeps logger file locking
+working on Android with this toolchain; see [patch details](vendor/README.md).
 
 ```bash
 cargo run --locked -- --root ./demo-data

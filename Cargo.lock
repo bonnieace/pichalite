@@ -1262,10 +1262,9 @@ dependencies = [
 [[package]]
 name = "rivium-util"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ada9f4aa85b4b82472118ebbc9e9b8dc708440bf21258d68c7f402954db6117d"
 dependencies = [
  "flate2",
+ "fs2",
  "rivium",
  "serde",
  "serde_ignored",
