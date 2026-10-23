@@ -19,7 +19,7 @@ object RuntimeGateway {
                 check(started == 0 || started == 1) { "Could not open the photo queue: ${PichaRuntime.nativeLastError()}" }
             }
             val reply = JSONObject(NativeJobs.nativeCall(request.toString()))
-            check(reply.optBoolean("ok")) { reply.optString("error", "Photo queue unavailable") }
+            check(reply.optBoolean("ok")) { "${request.optString("action")}: ${reply.optString("error", "Photo queue unavailable")}" }
             reply
         }
     }

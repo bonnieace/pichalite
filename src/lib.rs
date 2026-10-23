@@ -103,6 +103,9 @@ impl App for PichaApp {
                 Ok(())
             }.await;
                 *active().lock().unwrap() = None;
+                // Release SQLite connections before a new JNI runtime generation
+                // can reacquire the queue and reopen its WAL database.
+                engine.pool.close().await;
                 #[cfg(feature = "jni")]
                 {
                     *JNI_HANDLE.get().unwrap().lock().unwrap() = None;
@@ -159,8 +162,11 @@ impl Engine {
             .journal_mode(SqliteJournalMode::Wal)
             .synchronous(SqliteSynchronous::Full)
             .busy_timeout(Duration::from_secs(5));
+        // One local worker shares the database with JNI calls and the scanner.
+        // Serialize their transactions, including Apalis registration/heartbeat,
+        // rather than racing independent SQLite writers on Android.
         let pool = SqlitePoolOptions::new()
-            .max_connections(3)
+            .max_connections(1)
             .connect_with(options)
             .await?;
         // Run the bundled migrations directly: setup() changes synchronous to OFF.
