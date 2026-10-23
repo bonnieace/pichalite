@@ -1,0 +1,10 @@
+<resources>
+    <style name="PichaBaseTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">#FAF7F0</item>
+        <item name="android:navigationBarColor">#202D32</item>
+        <item name="android:colorAccent">#D5502B</item>
+    </style>
+    <style name="AppTheme" parent="PichaBaseTheme" />
+</resources>

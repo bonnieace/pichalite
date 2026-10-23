@@ -1,0 +1,9 @@
+/target/
+/demo-data/
+/android/.gradle/
+/android/local.properties
+/android/**/build/
+/android/app/src/main/jniLibs/
+*.apk
+*.log
+.idea/

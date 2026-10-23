@@ -1,0 +1,307 @@
+package ke.co.pichalite
+
+import android.Manifest
+import android.app.Application
+import android.content.ClipData
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.provider.OpenableColumns
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import androidx.lifecycle.*
+import coil.compose.AsyncImage
+import kotlinx.coroutines.*
+import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
+import java.util.UUID
+
+data class Photo(val id: String, val name: String, val input: String, val inputBytes: Long, val output: String?, val outputBytes: Long?, val status: String, val error: String?)
+data class QueueState(val loaded: Boolean = false, val paused: Boolean = false, val pending: Int = 0, val savedBytes: Long = 0, val photos: List<Photo> = emptyList())
+
+class PhotoModel(app: Application) : AndroidViewModel(app) {
+    var state by mutableStateOf(QueueState()); private set
+    var importing by mutableStateOf(false); private set
+    var message by mutableStateOf<String?>(null); private set
+    private val context get() = getApplication<Application>()
+    private fun parse(value: JSONObject) {
+        val jobs = value.getJSONArray("jobs")
+        state = QueueState(true, value.getBoolean("paused"), value.getInt("pending"), value.getLong("saved_bytes"), (0 until jobs.length()).map { i ->
+            val p = jobs.getJSONObject(i)
+            Photo(p.getString("id"), p.getString("name"), p.getString("input"), p.getLong("input_bytes"), if (p.isNull("output")) null else p.getString("output"), if (p.isNull("output_bytes")) null else p.getLong("output_bytes"), p.getString("status"), if (p.isNull("error")) null else p.getString("error"))
+        })
+    }
+    suspend fun refresh() {
+        try { parse(RuntimeGateway.call(context, JSONObject().put("action", "snapshot"))) }
+        catch (e: Exception) { if (e is CancellationException) throw e; message = e.message ?: "Could not open your photos" }
+    }
+    fun dismissMessage() { message = null }
+    fun togglePause() = viewModelScope.launch {
+        try {
+            parse(RuntimeGateway.call(context, JSONObject().put("action", "pause").put("paused", !state.paused)))
+            if (!state.paused && state.pending > 0) startProcessing()
+        } catch (e: Exception) { message = e.message }
+    }
+    fun retry(photo: Photo) = viewModelScope.launch {
+        try { parse(RuntimeGateway.call(context, JSONObject().put("action", "retry").put("id", photo.id))); if (!state.paused) startProcessing() }
+        catch (e: Exception) { message = e.message }
+    }
+    fun startProcessing() {
+        try { ContextCompat.startForegroundService(context, Intent(context, PhotoService::class.java)) }
+        catch (_: IllegalStateException) { message = "Photos saved. Reopen PichaLite to continue processing." }
+    }
+
+    fun importPhotos(uris: List<Uri>) = viewModelScope.launch {
+        if (importing || uris.isEmpty()) return@launch
+        importing = true
+        var added = 0
+        val errors = mutableListOf<String>()
+        try {
+            for (uri in uris.take(30)) {
+                try {
+                    val input = withContext(Dispatchers.IO) {
+                        val resolver = context.contentResolver
+                        val mime = resolver.getType(uri)
+                        val extension = when (mime) { "image/jpeg" -> "jpg"; "image/png" -> "png"; "image/webp" -> "webp"; else -> error("Use JPEG, PNG or WebP photos") }
+                        val display = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null } ?: "photo.$extension"
+                        val safe = display.replace(Regex("[^a-zA-Z0-9._ -]"), "_").take(90).substringBeforeLast('.')
+                        val inbox = File(RuntimeGateway.root(context), "inbox").apply { mkdirs() }
+                        val destination = File(inbox, "${UUID.randomUUID()}__${safe}.$extension")
+                        val part = File(inbox, destination.name + ".part")
+                        try {
+                            resolver.openInputStream(uri).use { source ->
+                                checkNotNull(source) { "Could not read $display" }
+                                FileOutputStream(part).use { out ->
+                                    val buffer = ByteArray(64 * 1024)
+                                    var total = 0L
+                                    while (true) {
+                                        val count = source.read(buffer)
+                                        if (count < 0) break
+                                        total += count
+                                        check(total <= 40L * 1024 * 1024) { "$display is larger than 40 MB" }
+                                        out.write(buffer, 0, count)
+                                    }
+                                    check(total > 0) { "$display is empty" }
+                                    out.fd.sync()
+                                }
+                            }
+                            check(part.renameTo(destination)) { "Could not save $display" }
+                            destination
+                        } finally { part.delete() }
+                    }
+                    RuntimeGateway.call(context, JSONObject().put("action", "enqueue").put("input", input.absolutePath))
+                    added++
+                } catch (e: Exception) { if (e is CancellationException) throw e; errors += e.message ?: "A photo could not be imported" }
+            }
+            if (uris.size > 30) errors += "Choose up to 30 photos at a time"
+            refresh()
+            if (added > 0 && !state.paused) startProcessing()
+            if (errors.isNotEmpty()) message = "$added imported. ${errors.first()}"
+        } finally { importing = false }
+    }
+}
+
+class MainActivity : ComponentActivity() {
+    private val model by viewModels<PhotoModel>()
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent { PichaTheme { PichaScreen(model, ::sharePhoto) } }
+        // A configuration change must not import the same incoming intent twice.
+        if (savedInstanceState == null) acceptShare(intent)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                model.refresh()
+                if (model.state.pending > 0 && !model.state.paused) model.startProcessing()
+                while (isActive) { delay(900); model.refresh() }
+            }
+        }
+    }
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); acceptShare(intent) }
+    @Suppress("DEPRECATION")
+    private fun acceptShare(intent: Intent) {
+        val photos = when (intent.action) {
+            Intent.ACTION_SEND -> listOfNotNull(if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java) else intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM))
+            Intent.ACTION_SEND_MULTIPLE -> (if (Build.VERSION.SDK_INT >= 33) intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java) else intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)) ?: emptyList()
+            else -> emptyList()
+        }
+        model.importPhotos(photos)
+        intent.action = Intent.ACTION_MAIN
+        intent.removeExtra(Intent.EXTRA_STREAM)
+    }
+    private fun sharePhoto(photo: Photo) {
+        val path = photo.output ?: return
+        val uri = FileProvider.getUriForFile(this, "$packageName.files", File(path))
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "image/jpeg"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            clipData = ClipData.newUri(contentResolver, "Optimised photo", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(send, "Share your lighter photo"))
+    }
+}
+
+private val Ink = Color(0xFF202D32)
+private val Paper = Color(0xFFFAF7F0)
+private val Orange = Color(0xFFD5502B)
+private val Muted = Color(0xFF68716D)
+private val Line = Color(0xFFE4E2D9)
+private val Green = Color(0xFF33684C)
+
+@Composable private fun PichaTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = lightColorScheme(primary = Orange, onPrimary = Color.White, background = Paper, surface = Paper, onSurface = Ink, onBackground = Ink, secondary = Green), content = content)
+}
+
+@Composable private fun PichaScreen(model: PhotoModel, onShare: (Photo) -> Unit) {
+    var tab by remember { mutableIntStateOf(0) }
+    val state = model.state
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { model.importPhotos(it) }
+    val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val addPhotos: () -> Unit = {
+        if (Build.VERSION.SDK_INT >= 33) notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        picker.launch(arrayOf("image/jpeg", "image/png", "image/webp"))
+    }
+    val ready = state.photos.count { it.status == "ready" }
+    Scaffold(
+        containerColor = Paper,
+        bottomBar = {
+            NavigationBar(containerColor = Paper, tonalElevation = 0.dp) {
+                NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.Outlined.PhotoLibrary, null) }, label = { Text("Studio") }, colors = NavigationBarItemDefaults.colors(indicatorColor = Color(0xFFF2DECF)))
+                NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.Outlined.CheckCircle, null) }, label = { Text("Ready · $ready") }, colors = NavigationBarItemDefaults.colors(indicatorColor = Color(0xFFF2DECF)))
+            }
+        }
+    ) { padding ->
+        LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 18.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            item {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(Orange), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.FilterHdr, null, tint = Color.White, modifier = Modifier.size(23.dp)) }
+                        Spacer(Modifier.width(9.dp)); Text("picha", fontWeight = FontWeight.ExtraBold, fontSize = 25.sp, letterSpacing = (-1).sp); Text("lite", fontSize = 25.sp, letterSpacing = (-1).sp, color = Orange)
+                    }
+                    Text("●  OFFLINE", fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = Green)
+                }
+            }
+            if (tab == 0) {
+                item {
+                    Column {
+                        Text("MAKE ROOM FOR MORE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Orange, letterSpacing = 2.sp)
+                        Spacer(Modifier.height(12.dp))
+                        Text("Your photos.\nLighter.", fontSize = 48.sp, lineHeight = 49.sp, letterSpacing = (-2).sp, fontWeight = FontWeight.ExtraBold)
+                        Spacer(Modifier.height(12.dp))
+                        Text("Less data to send. More space to keep.\nPrepare a whole batch, right on your phone.", color = Muted, fontSize = 14.sp, lineHeight = 21.sp)
+                        Spacer(Modifier.height(21.dp))
+                        Button(onClick = addPhotos, enabled = !model.importing, modifier = Modifier.fillMaxWidth().height(55.dp), shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = Ink)) {
+                            Icon(Icons.Outlined.AddPhotoAlternate, null, modifier = Modifier.size(22.dp)); Spacer(Modifier.width(10.dp)); Text(if (model.importing) "Saving your photos…" else "Choose photos", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        Text("JPEG, PNG & WebP · Originals stay untouched", fontSize = 11.sp, color = Muted, modifier = Modifier.align(Alignment.CenterHorizontally))
+                    }
+                }
+                item {
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color(0xFFF1EAD9)).padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("SPACE SAVED", fontSize = 10.sp, color = Muted, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
+                            Text(bytes(state.savedBytes), fontSize = 31.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
+                            Text("across $ready finished photo${if (ready == 1) "" else "s"}", fontSize = 12.sp, color = Muted)
+                        }
+                        Box(Modifier.size(58.dp).clip(CircleShape).background(Color(0xFFE4D6B5)), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.SouthWest, null, tint = Green, modifier = Modifier.size(32.dp)) }
+                    }
+                }
+                item {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Your photo queue", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                            Text(if (state.paused) "Paused · saved safely for later" else if (state.pending > 0) "${state.pending} waiting or processing" else "All caught up", fontSize = 12.sp, color = Muted)
+                        }
+                        if (state.pending > 0 || state.paused) TextButton(onClick = { model.togglePause() }) {
+                            Icon(if (state.paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause, null, modifier = Modifier.size(18.dp)); Text(if (state.paused) "Resume" else "Pause")
+                        }
+                    }
+                }
+            } else {
+                item {
+                    Column {
+                        Text("READY WHEN YOU ARE", color = Orange, letterSpacing = 2.sp, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(10.dp)); Text("Good to go.", fontSize = 42.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.5).sp)
+                        Spacer(Modifier.height(8.dp)); Text("Your lighter photos, ready for the next share.", color = Muted, fontSize = 14.sp)
+                    }
+                }
+            }
+            if (model.message != null) item {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFFFFE8DE)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(model.message!!, Modifier.weight(1f), fontSize = 12.sp)
+                    IconButton(onClick = { model.dismissMessage() }) { Icon(Icons.Outlined.Close, "Dismiss") }
+                }
+            }
+            val photos = if (tab == 1) state.photos.filter { it.status == "ready" } else state.photos
+            if (!state.loaded) item { LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Orange) }
+            else if (photos.isEmpty()) item {
+                Column(Modifier.fillMaxWidth().border(1.dp, Line, RoundedCornerShape(20.dp)).padding(26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(if (tab == 0) Icons.Outlined.Collections else Icons.Outlined.CheckCircle, null, tint = Orange, modifier = Modifier.size(38.dp))
+                    Spacer(Modifier.height(12.dp)); Text(if (tab == 0) "A little lighter starts here." else "Your finished photos land here.", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(7.dp)); Text(if (tab == 0) "Choose photos above, or share them\nto PichaLite from your Gallery." else "Choose a few photos in the Studio\nto get your first batch ready.", color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
+                }
+            }
+            items(photos, key = { it.id }) { photo -> PhotoRow(photo, state.paused, { onShare(photo) }, { model.retry(photo) }) }
+            item { Text("ON YOUR PHONE. ALWAYS.\nNo account. No uploads. No internet needed.", color = Muted, fontSize = 10.sp, lineHeight = 17.sp, letterSpacing = 0.5.sp, modifier = Modifier.padding(top = 8.dp)) }
+        }
+    }
+}
+
+@Composable private fun PhotoRow(photo: Photo, paused: Boolean, share: () -> Unit, retry: () -> Unit) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AsyncImage(model = File(photo.output ?: photo.input), contentDescription = photo.name, contentScale = ContentScale.Crop, modifier = Modifier.size(72.dp).clip(RoundedCornerShape(14.dp)).background(Line))
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(photo.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Spacer(Modifier.height(5.dp))
+                if (photo.status == "ready") {
+                    Text("${bytes(photo.inputBytes)} → ${bytes(photo.outputBytes ?: 0)}", color = Muted, fontSize = 12.sp)
+                    val reduction = if (photo.inputBytes > 0) ((photo.inputBytes - (photo.outputBytes ?: photo.inputBytes)) * 100 / photo.inputBytes).coerceAtLeast(0) else 0
+                    Text(if (reduction > 0) "$reduction% lighter" else "Ready to share", color = Green, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                } else Text(when (photo.status) { "failed" -> "Could not process · tap retry"; "processing" -> "Preparing your photo…"; else -> if (paused) "Paused · safely in your queue" else "Waiting in your queue" }, fontSize = 12.sp, color = if (photo.status == "failed") Orange else Muted)
+            }
+            when (photo.status) {
+                "ready" -> IconButton(onClick = share) { Icon(Icons.Outlined.IosShare, "Share ${photo.name}", tint = Orange) }
+                "failed" -> IconButton(onClick = retry) { Icon(Icons.Outlined.Refresh, "Retry ${photo.name}", tint = Orange) }
+                "processing" -> CircularProgressIndicator(Modifier.size(20.dp), color = Orange, strokeWidth = 2.dp)
+                else -> Icon(Icons.Outlined.Schedule, null, tint = Muted, modifier = Modifier.size(20.dp))
+            }
+        }
+        if (photo.status == "failed" && photo.error != null) Text(photo.error, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+        HorizontalDivider(Modifier.padding(top = 18.dp), color = Line)
+    }
+}
+
+private fun bytes(value: Long): String = when {
+    value >= 1024 * 1024 -> String.format(java.util.Locale.US, "%.1f MB", value / (1024.0 * 1024))
+    value >= 1024 -> String.format(java.util.Locale.US, "%.0f KB", value / 1024.0)
+    else -> "$value B"
+}
