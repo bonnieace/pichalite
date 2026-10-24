@@ -138,9 +138,13 @@ phone checklist belong in `docs/PHONE_TEST.md`.
 This version focuses on local batch compression and durable execution, with
 optional cloud import and Google Photos handoff. Those cloud steps need internet.
 It does not include watermarking, AI processing, automatic cloud sync or a
-permanent Android background daemon. Snapshot history currently returns the
-latest 500 photos. A production version should add history cleanup, broader
+permanent Android background daemon. Snapshot history includes the full queue, with persisted totals across all
+completed photos. Local replacements release both temporary working copies. A production version should add history cleanup, broader
 device testing and richer photo controls.
+
+The phone download is a standalone ARM64 APK, while CI uses a separate x86_64
+APK for Android 13 emulator checks. This keeps emulator libraries out of the
+phone installer. See [large-batch totals](docs/LARGE_BATCHES.md).
 
 ## Submission
 
@@ -165,3 +169,4 @@ image to Gallery, and delete its verified unchanged original in one flow. Allow
 Android's replacement permission when requested; refusal keeps the original and
 shows Retry replacement. The old separate cleanup button is removed. Cloud
 imports keep cloud originals. See [local flow details](docs/LOCAL_FILES.md).
+

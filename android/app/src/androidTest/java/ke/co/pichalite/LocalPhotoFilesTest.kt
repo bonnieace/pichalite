@@ -299,6 +299,11 @@ class LocalPhotoFilesTest {
             assertEquals("ready", saved.status)
             assertNotNull(saved.savedUri)
             context.contentResolver.openInputStream(Uri.parse(saved.savedUri))!!.use { assertArrayEquals(expected, it.readBytes()) }
+            val extra = store.exportToFolder(saved, DocumentsContract.buildTreeDocumentUri(authority, "root"))
+            try {
+                context.contentResolver.openInputStream(extra)!!.use { assertArrayEquals(expected, it.readBytes()) }
+                assertEquals(Uri.parse(saved.savedUri), store.savedCopy(saved))
+            } finally { DocumentsContract.deleteDocument(context.contentResolver, extra) }
             val share = FinishedPhotosSharing.intent(context, listOf(saved))
             assertEquals(Intent.ACTION_SEND, share.action)
             val total = snapshot.getLong("reclaimed_bytes")

@@ -96,27 +96,25 @@ class LocalPhotoFiles(
         return file
     }
 
-    fun exportToFolder(photo: Photo, tree: Uri): Uri {
+    fun exportToFolder(photo: Photo, tree: Uri): Uri = withOutput(photo) { file ->
         try { resolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
         catch (_: SecurityException) { /* Session-only saves are still checked before any cleanup. */ }
-        val file = output(photo)
         val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         val name = photo.name.substringBeforeLast('.').take(100) + "-pichalite.jpg"
         val destination = checkNotNull(DocumentsContract.createDocument(resolver, parent, "image/jpeg", name)) {
             "This folder does not allow saving files"
         }
-        try { writeAndVerify(photo, file, destination); return destination }
+        try { writeAndVerify(photo, file, destination); destination }
         catch (e: Exception) {
             try { DocumentsContract.deleteDocument(resolver, destination) } catch (_: Exception) { }
             throw e
         }
     }
 
-    fun exportToGallery(photo: Photo): Uri {
+    fun exportToGallery(photo: Photo): Uri = withOutput(photo) { file ->
         if (Build.VERSION.SDK_INT < 29) check(context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
             "Allow storage access to save the smaller image. The original is untouched."
         }
-        val file = output(photo)
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, photo.name.substringBeforeLast('.').take(100) + "-pichalite.jpg")
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
@@ -130,11 +128,24 @@ class LocalPhotoFiles(
             copyAndVerify(file, destination)
             if (Build.VERSION.SDK_INT >= 29) check(resolver.update(destination, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null) == 1) { "Could not publish the Gallery copy" }
             recordExport(photo, file, destination)
-            return destination
+            destination
         } catch (e: Exception) {
             try { resolver.delete(destination, null, null) } catch (_: Exception) { }
             throw e
         }
+    }
+
+    private fun withOutput(photo: Photo, operation: (File) -> Uri): Uri {
+        if (photo.savedUri == null) return operation(output(photo))
+        check(savedCopy(photo)?.toString() == photo.savedUri) { "The saved result is no longer available" }
+        val temporary = File.createTempFile("pichalite-export-", ".jpg", context.cacheDir)
+        try {
+            checkNotNull(resolver.openInputStream(Uri.parse(photo.savedUri))).use { input ->
+                temporary.outputStream().use { input.copyTo(it) }
+            }
+            check(digest(temporary) == savedHash(photo)) { "The saved result changed" }
+            return operation(temporary)
+        } finally { temporary.delete() }
     }
 
     private fun writeAndVerify(photo: Photo, file: File, uri: Uri) {
@@ -160,6 +171,7 @@ class LocalPhotoFiles(
     }
 
     private fun recordExport(photo: Photo, file: File, uri: Uri) {
+        if (cacheReleased(photo)) return // Additional exports must retain the primary saved URI.
         val record = JSONObject().put("uri", uri.toString()).put("hash", digest(file))
         check(prefs.edit().putString("export:${photo.id}", record.toString()).commit()) { "Could not record the saved copy" }
     }

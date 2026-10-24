@@ -45,10 +45,15 @@ Finished photos can be selected for Share or Google Photos handoff. Optional
 **Export another copy** reveals folder/Gallery export actions. Exporting another
 copy is separate from the automatic save that is already part of compression.
 There is no app-imposed 30-photo selection truncation; platform picker limits,
-the 40 MB per-image limit and the queue view's existing 500-entry window remain.
+and the 40 MB per-image limit remain. The full queue is included in totals,
+including batches larger than 500.
 
-The dashboard reports size reduction, not measured net device free space: the
-smaller working output remains in private storage for sharing.
+After replacement, the saved external URI is retained and both private working
+files are cleared. Sharing and additional exports use the saved copy. The
+**Space reclaimed** total counts completed local replacements; **total compression
+reduction** includes all compressed results, including cloud imports whose
+originals are unchanged. These persisted totals survive restarts and cache cleanup.
+See [large-batch totals](LARGE_BATCHES.md).
 
 ## Preview update
 
