@@ -50,7 +50,11 @@ internal class LocalFlowIntroStore(context: Context, name: String = "local_flow_
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val active = lifecycle.isAtLeast(Lifecycle.State.STARTED)
     LaunchedEffect(step, active, autoAdvance, reducedMotion) {
-        if (active && autoAdvance && !reducedMotion && step < 2) { delay(4800); step++ }
+        val startingStep = step
+        if (active && autoAdvance && !reducedMotion && startingStep < 2) {
+            delay(4800)
+            if (step == startingStep) step = startingStep + 1
+        }
     }
     val titles = listOf("Smaller photos.\nSame memories.", "Saved first.\nVerified next.", "Then make room\nfor more.")
     val captions = listOf(
