@@ -1,4 +1,4 @@
-# Local compression and replacement (0.3.1)
+# Local compression and replacement (0.4.0)
 
 **Compress local photos** is the primary action. Choose a batch of JPEG, PNG or
 WebP files from Android's local file browser. Compression, saving the smaller
@@ -52,6 +52,10 @@ smaller working output remains in private storage for sharing.
 
 ## Preview update
 
-Version 0.3.1 keeps package `ke.co.pichalite.preview03` and the cached preview
-signing key, so it updates 0.3.0 in place. Android build/lint and instrumentation
-run in CI. Physical-phone provider behavior remains a device test.
+Version 0.4.0 uses package `ke.co.pichalite.preview04`, installing alongside
+0.3.0 to preserve its private queue. The older preview's signing cache did not
+save a key; an in-place update cannot be signed with that lost key. Select local
+originals through Compress local photos in the new preview. Future 0.4 builds
+use an explicitly configured and cached preview keystore. Android build/lint and
+Android 13 instrumentation run in CI. Physical-phone provider behavior remains
+a device test.

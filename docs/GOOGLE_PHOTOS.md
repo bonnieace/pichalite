@@ -41,7 +41,7 @@ through Google Photos can also remove synced device copies and album entries.
 The Android picker does not provide a Google Photos cloud media-item ID, so this
 flow cannot link directly to or automatically identify the original cloud item.
 
-## Batch actions and local files (0.3.1)
+## Batch actions and local files (0.4.0)
 
 **Compress local photos** opens local folder browsing. Local compression now
 saves a verified smaller image to Gallery and deletes the unchanged original
