@@ -64,7 +64,7 @@ debug APK for the challenge, not a Play Store release. ARM64 is for most phones;
 x86_64 supports the emulator. Android 8.0 / API 26 or newer is required.
 32-bit ARM and x86 devices are not supported by this APK.
 
-Open PichaLite and choose a batch of photos, each up to 40 MB. The Google Photos / cloud
+Open PichaLite and choose a batch of photos, each up to 40 MB. The Google Photos
 picker still follows Android's device-specific selection maximum; local selection
 has no app-imposed count cap. JPEG, PNG and WebP
 are supported; HEIC, video and animated-image preservation are outside this
@@ -75,6 +75,9 @@ app displays actual sizes and does not claim savings for those files.
 
 ## How it works
 
+- Up to two imports stream concurrently while the native compression worker processes
+  completed arrivals; imports do not wait for a batch-wide refresh or local replacement.
+  Each stream uses a 64 KiB buffer; image decoding stays limited to one photo at a time.
 - Kotlin copies incoming content URIs into private storage through a `.part`
   file, syncs it, and renames it before enqueuing. Temporary Gallery permissions
   are retained for local replacement; cloud copies need only import access.

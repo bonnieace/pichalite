@@ -11,8 +11,8 @@ android {
         applicationId = "ke.co.pichalite"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.4.0"
+        versionCode = 11
+        versionName = "0.5.4"
         resValue("string", "app_name", "PichaLite")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -30,7 +30,7 @@ android {
             // installing alongside them; use an explicit cached key for future updates.
             applicationIdSuffix = ".preview04"
             versionNameSuffix = "-preview"
-            resValue("string", "app_name", "PichaLite 0.4 Preview")
+            resValue("string", "app_name", "PichaLite Preview")
         }
     }
     splits {
@@ -44,7 +44,14 @@ android {
     buildFeatures { compose = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
-    packaging { jniLibs { useLegacyPackaging = false } }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+            // The Rust build script already strips this release library.
+            keepDebugSymbols.add("**/libpichalite.so")
+            keepDebugSymbols.add("**/libandroidx.graphics.path.so")
+        }
+    }
 }
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.04.01"))
@@ -56,8 +63,12 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("com.airbnb.android:lottie-compose:6.7.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2025.04.01"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 

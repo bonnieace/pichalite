@@ -1,6 +1,7 @@
 /target/
 /demo-data/
 /android/.gradle/
+/android/.kotlin/
 /android/local.properties
 /android/**/build/
 /android/app/src/main/jniLibs/

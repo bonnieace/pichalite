@@ -22,6 +22,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.toggleable
@@ -63,18 +64,28 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
     var state by mutableStateOf(QueueState()); private set
     var importing by mutableStateOf(false); private set
     var message by mutableStateOf<String?>(null); private set
+    var messageIsError by mutableStateOf(false); private set
+    var importedCount by mutableIntStateOf(0); private set
+    var importTotal by mutableIntStateOf(0); private set
     private val context get() = getApplication<Application>()
+    private val onboarding = LocalFlowIntroStore(app)
+    var showOnboarding by mutableStateOf(!onboarding.completed); private set
+    fun completeOnboarding() { onboarding.complete(); showOnboarding = false }
+    fun replayOnboarding() { showOnboarding = true }
     val localFiles = LocalPhotoFiles(app)
     var selectedIds by mutableStateOf(setOf<String>()); private set
     var working by mutableStateOf(false); private set
-    var localVersion by mutableIntStateOf(0); private set
+    internal var localUi by mutableStateOf(LocalQueueUi()); private set
+    private suspend fun refreshLocalUi() {
+        val photos = state.photos
+        localUi = withContext(Dispatchers.IO) { LocalQueueUi.read(photos, localFiles) }
+    }
     val selectedPhotos get() = state.photos.filter { it.status == "ready" && it.id in selectedIds }
     fun select(photo: Photo, selected: Boolean) { selectedIds = if (selected) selectedIds + photo.id else selectedIds - photo.id }
     fun selectAll() { selectedIds = state.photos.filter { it.status == "ready" }.map { it.id }.toSet() }
     fun clearSelection() { selectedIds = emptySet() }
     fun importLocal(result: LocalImports) {
-        localFiles.retainGrants(result)
-        importPhotos(result.uris, local = true)
+        importPhotos(result.uris, local = true, grants = result)
     }
     fun saveToFolder(tree: Uri) = operateSelected("saved") { localFiles.exportToFolder(it, tree) }
     fun saveToGallery() = operateSelected("saved to Gallery") { localFiles.exportToGallery(it) }
@@ -87,9 +98,9 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
         replacementApproval = null
         return request
     }
-    private fun recordReplacementApproval(photos: List<Photo>, request: PendingIntent) {
+    private suspend fun recordReplacementApproval(photos: List<Photo>, request: PendingIntent) {
         approvalPhotos = photos
-        replacementUi.edit().putStringSet("photos", photos.map { it.id }.toSet()).commit()
+        withContext(Dispatchers.IO) { replacementUi.edit().putStringSet("photos", photos.map { it.id }.toSet()).commit() }
         replacementApproval = request
     }
     private suspend fun finishLocalPhotos() {
@@ -99,20 +110,24 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
             val needsPermission = mutableListOf<Photo>()
             var request: PendingIntent? = null
             val foreground = state.pending == 0 && !importing
-            for (photo in state.photos) {
-                if (!localFiles.hasLocalSource(photo) || localFiles.cacheReleased(photo) || photo.status != "ready") continue
-                val approval = withContext(Dispatchers.IO) { localFiles.replaceWhenReady(photo, foreground = foreground) }
-                LocalReplacementRunner.release(context, photo, localFiles)
-                if (approval != null) {
-                    needsPermission += photo
-                    request = approval
-                    if (Build.VERSION.SDK_INT < 30) break
+            val photos = state.photos
+            withContext(Dispatchers.IO) {
+                for (photo in photos) {
+                    if (!localFiles.hasLocalSource(photo) || localFiles.cacheReleased(photo) || photo.status != "ready") continue
+                    val approval = localFiles.replaceWhenReady(photo, foreground = foreground)
+                    LocalReplacementRunner.release(context, photo, localFiles)
+                    if (approval != null) {
+                        needsPermission += photo
+                        request = approval
+                        if (Build.VERSION.SDK_INT < 30) break
+                    }
                 }
             }
-            localVersion++
-            if (request != null) {
-                if (needsPermission.size > 1) request = withContext(Dispatchers.IO) { localFiles.batchReplacementPermission(needsPermission) }
-                recordReplacementApproval(needsPermission, request)
+            refreshLocalUi()
+            val approvalRequest = request
+            if (approvalRequest != null) {
+                val grouped = if (needsPermission.size > 1) withContext(Dispatchers.IO) { localFiles.batchReplacementPermission(needsPermission) } else approvalRequest
+                recordReplacementApproval(needsPermission, grouped)
             }
         } finally { finishingReplacements = false }
     }
@@ -134,7 +149,7 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
             replacementUi.edit().remove("photos").commit()
             approvalPhotos = emptyList()
             replacementApproval = null
-            localVersion++
+            refreshLocalUi()
         } finally { finishingReplacements = false }
     }
     fun retryReplacement(photo: Photo) = viewModelScope.launch {
@@ -146,7 +161,7 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
             if (request != null) {
                 recordReplacementApproval(listOf(photo), request)
             }
-            localVersion++
+            refreshLocalUi()
         } finally { working = false }
     }
     private fun operateSelected(action: String, operation: (Photo) -> Unit) = viewModelScope.launch {
@@ -163,63 +178,73 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
                     if (e is CancellationException) throw e
                     errors += "${photo.name}: ${e.message ?: "Could not complete the operation"}"
                 }
-                localVersion++
+                refreshLocalUi()
             }
-            message = "$completed of ${photos.size} $action." + if (errors.isEmpty()) "" else " ${errors.first()}"
+            showMessage("$completed of ${photos.size} $action." + if (errors.isEmpty()) "" else " ${errors.first()}", isError = errors.isNotEmpty())
         } finally { working = false }
     }
-    private val backups = PhotoBackupStore(app)
-    private var backupVersion by mutableIntStateOf(0)
-    fun backupStage(photo: Photo): BackupStage {
-        @Suppress("UNUSED_VARIABLE") val observedVersion = backupVersion
-        return backups.stage(photo)
-    }
-    fun showMessage(value: String) { message = value }
-    fun recordGooglePhotosHandoff(photo: Photo) = viewModelScope.launch {
-        try { withContext(Dispatchers.IO) { backups.recordHandoff(photo) }; backupVersion++ }
-        catch (e: Exception) { if (e is CancellationException) throw e; message = e.message }
-    }
-    fun confirmGooglePhotosBackup(photo: Photo) = viewModelScope.launch {
-        try { withContext(Dispatchers.IO) { backups.confirmBackup(photo) }; backupVersion++ }
-        catch (e: Exception) { if (e is CancellationException) throw e; message = e.message }
-    }
-    private fun parse(value: JSONObject) {
-        val jobs = value.getJSONArray("jobs")
-        state = QueueState(true, value.getBoolean("paused"), value.getInt("pending"), value.getLong("saved_bytes"), (0 until jobs.length()).map { i ->
-            val p = jobs.getJSONObject(i)
-            Photo.fromJson(p)
-        }, value.optLong("reclaimed_bytes"), value.optInt("completed"), value.optInt("total"))
+    fun showMessage(value: String, isError: Boolean = true) { messageIsError = isError; message = value }
+    private suspend fun parse(value: JSONObject) {
+        state = withContext(Dispatchers.Default) {
+            val jobs = value.getJSONArray("jobs")
+            QueueState(true, value.getBoolean("paused"), value.getInt("pending"), value.getLong("saved_bytes"), (0 until jobs.length()).map { i ->
+                val p = jobs.getJSONObject(i)
+                Photo.fromJson(p)
+            }, value.optLong("reclaimed_bytes"), value.optInt("completed"), value.optInt("total"))
+        }
     }
     private suspend fun refreshSnapshot() { parse(RuntimeGateway.call(context, JSONObject().put("action", "snapshot"))) }
     suspend fun refresh() {
         try { refreshSnapshot(); finishLocalPhotos() }
-        catch (e: Exception) { if (e is CancellationException) throw e; message = e.message ?: "Could not open your photos" }
+        catch (e: Exception) { if (e is CancellationException) throw e; showMessage(e.message ?: "Could not open your photos") }
     }
     fun dismissMessage() { message = null }
     fun togglePause() = viewModelScope.launch {
         try {
             parse(RuntimeGateway.call(context, JSONObject().put("action", "pause").put("paused", !state.paused)))
             if (!state.paused && state.pending > 0) startProcessing()
-        } catch (e: Exception) { message = e.message }
+        } catch (e: Exception) { showMessage(e.message ?: "Could not complete this action") }
     }
     fun retry(photo: Photo) = viewModelScope.launch {
         try { parse(RuntimeGateway.call(context, JSONObject().put("action", "retry").put("id", photo.id))); if (!state.paused) startProcessing() }
-        catch (e: Exception) { message = e.message }
+        catch (e: Exception) { showMessage(e.message ?: "Could not complete this action") }
     }
     fun startProcessing() {
-        try { ContextCompat.startForegroundService(context, Intent(context, PhotoService::class.java)) }
-        catch (_: IllegalStateException) { message = "Photos saved. Reopen PichaLite to continue processing." }
+        if (PhotoService.running) {
+            if (message == PROCESSING_WARNING) dismissMessage()
+            return
+        }
+        try {
+            ContextCompat.startForegroundService(context, Intent(context, PhotoService::class.java))
+            if (message == PROCESSING_WARNING) dismissMessage()
+        } catch (error: IllegalStateException) {
+            android.util.Log.w("PichaLite", "Could not start photo service", error)
+            showMessage(PROCESSING_WARNING)
+        }
+    }
+    private companion object {
+        const val PROCESSING_WARNING = "Photos saved. Reopen PichaLite to continue processing."
     }
 
-    fun importPhotos(uris: List<Uri>, local: Boolean = false) = viewModelScope.launch {
+    fun importPhotos(uris: List<Uri>, local: Boolean = false, grants: LocalImports? = null) = viewModelScope.launch {
         if (importing || uris.isEmpty()) return@launch
         importing = true
+        PhotoService.importActive = true
+        importedCount = 0
+        importTotal = uris.distinct().size
+        dismissMessage()
         var added = 0
         val errors = mutableListOf<String>()
         try {
-            for (uri in uris.distinct()) {
-                try {
-                    val input = withContext(Dispatchers.IO) {
+            if (!state.paused) startProcessing()
+            withContext(Dispatchers.IO) { if (grants != null) localFiles.retainGrants(grants) }
+            // Copy up to two provider streams while the native worker compresses
+            // each completed file. Never wait for the rest of the batch or a
+            // save/replacement pass before handing the next photo to the queue.
+            importInParallel(
+                items = uris.distinct(),
+                transfer = { uri ->
+                    withContext(Dispatchers.IO) {
                         val resolver = context.contentResolver
                         val mime = resolver.getType(uri)
                         val extension = when (mime) { "image/jpeg" -> "jpg"; "image/png" -> "png"; "image/webp" -> "webp"; else -> error("Use JPEG, PNG or WebP photos") }
@@ -235,6 +260,7 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
                                     val buffer = ByteArray(64 * 1024)
                                     var total = 0L
                                     while (true) {
+                                        currentCoroutineContext().ensureActive()
                                         val count = source.read(buffer)
                                         if (count < 0) break
                                         total += count
@@ -251,17 +277,19 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
                             destination
                         } finally { part.delete() }
                     }
+                },
+                onImported = { input ->
                     RuntimeGateway.call(context, JSONObject().put("action", "enqueue").put("input", input.absolutePath))
                     added++
-                    refresh()
-                    if (!state.paused) startProcessing()
-                } catch (e: Exception) { if (e is CancellationException) throw e; errors += e.message ?: "A photo could not be imported" }
-            }
+                    importedCount = added
+                },
+                onFailure = { errors += it.message ?: "A photo could not be imported" },
+            )
             refresh()
             if (added > 0 && !state.paused) startProcessing()
-            message = "$added photos imported." + if (errors.isEmpty()) "" else " ${errors.first()}"
-            localVersion++
-        } finally { importing = false }
+            showMessage("$added photo${if (added == 1) "" else "s"} imported." + if (errors.isEmpty()) "" else " ${errors.first()}", isError = errors.isNotEmpty())
+            refreshLocalUi()
+        } finally { importing = false; PhotoService.importActive = false }
     }
 }
 
@@ -271,6 +299,7 @@ class MainActivity : ComponentActivity() {
         model.completeReplacementApproval(it.resultCode == Activity.RESULT_OK)
     }
     private fun launchReplacementPermission() {
+        if (model.showOnboarding) return
         model.takeReplacementApproval()?.let {
             try { replacementPermission.launch(IntentSenderRequest.Builder(it.intentSender).build()) }
             catch (e: Exception) { model.completeReplacementApproval(false); model.showMessage(e.message ?: "Could not open Android’s replacement prompt") }
@@ -278,7 +307,10 @@ class MainActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { PichaTheme { PichaScreen(model, ::sharePhoto, ::sendToGooglePhotos, ::openGooglePhotos, ::sharePhotos, ::sendBatchToGooglePhotos) } }
+        setContent { PichaTheme {
+            if (model.showOnboarding) LocalFlowOnboarding(model::completeOnboarding)
+            else PichaScreen(model, ::sharePhoto, ::sharePhotos)
+        } }
         // A configuration change must not import the same incoming intent twice.
         if (savedInstanceState == null) acceptShare(intent)
         lifecycleScope.launch {
@@ -286,7 +318,12 @@ class MainActivity : ComponentActivity() {
                 model.refresh()
                 if (model.state.pending > 0 && !model.state.paused) model.startProcessing()
                 launchReplacementPermission()
-                while (isActive) { delay(900); model.refresh(); launchReplacementPermission() }
+                while (isActive) {
+                    delay(900)
+                    model.refresh()
+                    if (model.state.pending > 0 && !model.state.paused) model.startProcessing()
+                    launchReplacementPermission()
+                }
             }
         }
     }
@@ -304,55 +341,33 @@ class MainActivity : ComponentActivity() {
     }
     private fun sharePhoto(photo: Photo) = sharePhotos(listOf(photo))
     private fun sharePhotos(photos: List<Photo>) {
-        try { startActivity(Intent.createChooser(FinishedPhotosSharing.intent(this, photos), "Share lighter photos")) }
+        try { startActivity(FinishedPhotosSharing.chooser(this, photos)) }
         catch (e: Exception) { model.showMessage(e.message ?: "Could not share these photos") }
     }
-    private fun sendBatchToGooglePhotos(photos: List<Photo>) {
-        try {
-            startActivity(FinishedPhotosSharing.intent(this, photos, GooglePhotosSharing.PACKAGE))
-            photos.forEach { model.recordGooglePhotosHandoff(it) }
-            model.showMessage("Sent ${photos.size} copies to Google Photos. Finish saving there, then check backup for each copy.")
-        } catch (_: ActivityNotFoundException) { model.showMessage("Google Photos is not available. Use Share for another app.") }
-        catch (e: Exception) { model.showMessage(e.message ?: "Could not send these photos") }
-    }
 
-    private fun sendToGooglePhotos(photo: Photo) {
-        try {
-            startActivity(GooglePhotosSharing.intent(this, photo))
-            // A successful launch is only a handoff. Cancellation/return is never
-            // interpreted as a completed upload and never enables automatic deletion.
-            model.recordGooglePhotosHandoff(photo)
-        } catch (_: ActivityNotFoundException) {
-            model.showMessage("Google Photos is not available. Install or enable it, or use Share for another app.")
-        } catch (e: Exception) {
-            model.showMessage(e.message ?: "Could not send this photo to Google Photos")
-        }
-    }
-
-    private fun openGooglePhotos() {
-        try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://photos.google.com/"))) }
-        catch (_: ActivityNotFoundException) { model.showMessage("Open Google Photos to check the smaller copy and its backup status.") }
-    }
 }
 
-private val Ink = Color(0xFF202D32)
-private val Paper = Color(0xFFFAF7F0)
-private val Orange = Color(0xFFD5502B)
-private val Muted = Color(0xFF68716D)
-private val Line = Color(0xFFE4E2D9)
-private val Green = Color(0xFF33684C)
+internal val Ink = Color(0xFF202D32)
+internal val Paper = Color(0xFFFAF7F0)
+internal val Orange = Color(0xFFD5502B)
+internal val Muted = Color(0xFF68716D)
+internal val Line = Color(0xFFE4E2D9)
+internal val Green = Color(0xFF33684C)
 
 @Composable private fun PichaTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = lightColorScheme(primary = Orange, onPrimary = Color.White, background = Paper, surface = Paper, onSurface = Ink, onBackground = Ink, secondary = Green), content = content)
 }
 
-@Composable private fun PichaScreen(model: PhotoModel, onShare: (Photo) -> Unit, onGooglePhotos: (Photo) -> Unit, onOpenGooglePhotos: () -> Unit, onBatchShare: (List<Photo>) -> Unit, onBatchGooglePhotos: (List<Photo>) -> Unit) {
-    var tab by remember { mutableIntStateOf(0) }
-    var reviewingId by rememberSaveable { mutableStateOf<String?>(null) }
+@Composable private fun PichaScreen(model: PhotoModel, onShare: (Photo) -> Unit, onBatchShare: (List<Photo>) -> Unit) {
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var previewingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var studioPage by rememberSaveable { mutableIntStateOf(0) }
+    var readyPage by rememberSaveable { mutableIntStateOf(0) }
+    val studioList = rememberLazyListState()
+    val readyList = rememberLazyListState()
     val state = model.state
     var showExports by remember { mutableStateOf(false) }
     val selected = model.selectedPhotos
-    @Suppress("UNUSED_VARIABLE") val localVersion = model.localVersion
     val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val requestNotifications: () -> Unit = {
         if (Build.VERSION.SDK_INT >= 33) notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -385,20 +400,21 @@ private val Green = Color(0xFF33684C)
     Scaffold(
         containerColor = Paper,
         bottomBar = {
-            NavigationBar(containerColor = Paper, tonalElevation = 0.dp) {
-                NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.Outlined.PhotoLibrary, null) }, label = { Text("Studio") }, colors = NavigationBarItemDefaults.colors(indicatorColor = Color(0xFFF2DECF)))
-                NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.Outlined.CheckCircle, null) }, label = { Text("Ready · $ready") }, colors = NavigationBarItemDefaults.colors(indicatorColor = Color(0xFFF2DECF)))
-            }
+            PichaBottomBar(tab, ready) { tab = it }
         }
     ) { padding ->
-        LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 18.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        if (tab == 2) WrappedScreen(model, Modifier.padding(padding))
+        else LazyColumn(state = if (tab == 1) readyList else studioList, modifier = Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 18.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(Orange), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.FilterHdr, null, tint = Color.White, modifier = Modifier.size(23.dp)) }
                         Spacer(Modifier.width(9.dp)); Text("picha", fontWeight = FontWeight.ExtraBold, fontSize = 25.sp, letterSpacing = (-1).sp); Text("lite", fontSize = 25.sp, letterSpacing = (-1).sp, color = Orange)
                     }
-                    Text("●  ON-DEVICE", fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = Green)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("●  ON-DEVICE", fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = Green)
+                        IconButton(onClick = model::replayOnboarding, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.HelpOutline, "How PichaLite works", tint = Muted, modifier = Modifier.size(20.dp)) }
+                    }
                 }
             }
             if (tab == 0) {
@@ -415,12 +431,10 @@ private val Green = Color(0xFF33684C)
                         }
                         Spacer(Modifier.height(10.dp))
                         OutlinedButton(onClick = addPhotos, enabled = !model.importing && !model.working, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(16.dp)) {
-                            Icon(Icons.Outlined.FolderOpen, null); Spacer(Modifier.width(10.dp)); Text("Google Photos / cloud")
+                            Icon(Icons.Outlined.FolderOpen, null); Spacer(Modifier.width(10.dp)); Text("Google Photos")
                         }
                         Spacer(Modifier.height(10.dp))
-                        Text("JPEG, PNG & WebP · Local files save and replace", fontSize = 11.sp, color = Muted, modifier = Modifier.align(Alignment.CenterHorizontally))
-                        Spacer(Modifier.height(8.dp))
-                        Text("Local photos: compress → save to Gallery → delete original. Allow replacement if Android asks. Cloud imports save a copy; cloud originals stay.", fontSize = 11.sp, color = Muted, lineHeight = 16.sp)
+                        Text("JPEG, PNG & WebP", fontSize = 11.sp, color = Muted, modifier = Modifier.align(Alignment.CenterHorizontally))
                     }
                 }
                 item {
@@ -429,7 +443,6 @@ private val Green = Color(0xFF33684C)
                             Text("SPACE RECLAIMED", fontSize = 10.sp, color = Muted, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
                             Text(bytes(state.reclaimedBytes), fontSize = 31.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
                             Text("${bytes(state.savedBytes)} total compression reduction", fontSize = 12.sp, color = Muted)
-                            Text("Local originals are replaced after a verified save", fontSize = 10.sp, color = Muted)
                         }
                         Box(Modifier.size(58.dp).clip(CircleShape).background(Color(0xFFE4D6B5)), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.SouthWest, null, tint = Green, modifier = Modifier.size(32.dp)) }
                     }
@@ -438,9 +451,9 @@ private val Green = Color(0xFF33684C)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Your photo queue", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                            val waitingForPermission = state.photos.count { !model.localFiles.wasDeleted(it) && model.localFiles.replacementState(it) == "awaiting" }
-                            val needsAttention = state.photos.count { model.localFiles.canRetryReplacement(it) }
-                            val replacing = state.photos.count { it.status == "ready" && model.localFiles.hasLocalSource(it) && !model.localFiles.cacheReleased(it) && !model.localFiles.canRetryReplacement(it) && model.localFiles.replacementState(it) != "not_smaller" && (!model.localFiles.wasDeleted(it) || model.localFiles.hasExport(it)) }
+                            val waitingForPermission = model.localUi.waiting
+                            val needsAttention = model.localUi.attention
+                            val replacing = model.localUi.replacing
                             Text(when {
                                 state.paused -> "Paused · saved safely for later"
                                 state.pending > 0 -> "${state.completed} compressed · ${state.pending} remaining"
@@ -460,11 +473,11 @@ private val Green = Color(0xFF33684C)
                     Column {
                         Text("READY WHEN YOU ARE", color = Orange, letterSpacing = 2.sp, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(10.dp)); Text("Good to go.", fontSize = 42.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.5).sp)
-                        Spacer(Modifier.height(8.dp)); Text("Local photos are saved and replaced automatically. Select finished photos to share or export another copy.", color = Muted, fontSize = 14.sp)
+                        Spacer(Modifier.height(8.dp)); Text("Select finished photos to share or export another copy.", color = Muted, fontSize = 14.sp)
                     }
                 }
             }
-            if (ready > 0) item {
+            if (tab == 1 && ready > 0) item(key = "selection") {
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0xFFF1EAD9)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("${selected.size} selected", Modifier.weight(1f), fontWeight = FontWeight.Bold)
@@ -474,7 +487,6 @@ private val Green = Color(0xFF33684C)
                     if (selected.isNotEmpty()) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { onBatchShare(selected) }, enabled = !model.working, modifier = Modifier.weight(1f)) { Text("Share") }
-                            OutlinedButton(onClick = { onBatchGooglePhotos(selected) }, enabled = !model.working, modifier = Modifier.weight(1f)) { Text("Google Photos", fontSize = 12.sp, maxLines = 1) }
                         }
                         TextButton(onClick = { showExports = !showExports }, enabled = !model.working) { Text(if (showExports) "Hide export options" else "Export another copy") }
                         if (showExports) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -485,40 +497,38 @@ private val Green = Color(0xFF33684C)
                     }
                 }
             }
-            if (model.message != null) item {
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFFFFE8DE)).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(model.message!!, Modifier.weight(1f), fontSize = 12.sp)
-                    IconButton(onClick = { model.dismissMessage() }) { Icon(Icons.Outlined.Close, "Dismiss") }
-                }
+            if (model.message != null) item(key = "notice") {
+                PhotoNotice(model.message!!, model.messageIsError, model::dismissMessage)
             }
-            val photos = if (tab == 1) state.photos.filter { it.status == "ready" } else state.photos
-            if (!state.loaded) item { LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Orange) }
-            else if (photos.isEmpty()) item {
-                Column(Modifier.fillMaxWidth().border(1.dp, Line, RoundedCornerShape(20.dp)).padding(26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(if (tab == 0) Icons.Outlined.Collections else Icons.Outlined.CheckCircle, null, tint = Orange, modifier = Modifier.size(38.dp))
-                    Spacer(Modifier.height(12.dp)); Text(if (tab == 0) "A little lighter starts here." else "Your finished photos land here.", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(7.dp)); Text(if (tab == 0) "Choose photos above, or share them\nto PichaLite from your Gallery." else "Choose a few photos in the Studio\nto get your first batch ready.", color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
-                }
-            }
-            items(photos, key = { it.id }) { photo ->
-                PhotoRow(photo, state.paused, { onShare(photo) }, { model.retry(photo) }, { reviewingId = photo.id }, model.backupStage(photo),
+            photoQueue(state, model.importing, model.importedCount, model.importTotal, readyTab = tab == 1,
+                page = if (tab == 1) readyPage else studioPage,
+                onPageChange = { if (tab == 1) readyPage = it else studioPage = it }) { photo ->
+                PhotoRow(photo, state.paused, { onShare(photo) }, { model.retry(photo) },
                     photo.id in model.selectedIds, { model.select(photo, it) }, !model.working,
-                    model.localFiles.replacementStatus(photo),
-                    if (model.localFiles.canRetryReplacement(photo)) ({ model.retryReplacement(photo) }) else null)
+                    model.localUi.photos[photo.id]?.status,
+                    if (model.localUi.photos[photo.id]?.retry == true) ({ model.retryReplacement(photo) }) else null,
+                    selectable = tab == 1, open = { previewingId = photo.id })
             }
-            item { Text("COMPRESSION STAYS ON YOUR PHONE.\nLocal images save to Gallery and replace originals after verification. Cloud import and backup need internet. PichaLite keeps a smaller working copy for sharing.", color = Muted, fontSize = 10.sp, lineHeight = 17.sp, letterSpacing = 0.5.sp, modifier = Modifier.padding(top = 8.dp)) }
         }
     }
-    state.photos.find { it.id == reviewingId && it.status == "ready" }?.let { photo ->
-        GooglePhotosDialog(photo, model.backupStage(photo), { reviewingId = null },
-            { onGooglePhotos(photo) }, onOpenGooglePhotos, { model.confirmGooglePhotosBackup(photo) })
+    val previewPhotos = if (tab == 1) state.photos.filter { it.status == "ready" } else state.photos
+    previewPhotos.indexOfFirst { it.id == previewingId }.takeIf { it >= 0 }?.let { index ->
+        PhotoPreviewDialog(previewPhotos[index], index, previewPhotos.size,
+            dismiss = { previewingId = null },
+            previous = { previewingId = previewPhotos[index - 1].id },
+            next = { previewingId = previewPhotos[index + 1].id },
+            share = { onShare(previewPhotos[index]) })
     }
+
 }
 
-@Composable private fun PhotoRow(photo: Photo, paused: Boolean, share: () -> Unit, retry: () -> Unit, googlePhotos: () -> Unit, backupStage: BackupStage, selected: Boolean, select: (Boolean) -> Unit, selectionEnabled: Boolean, localStatus: String?, retryReplacement: (() -> Unit)?) {
+@Composable internal fun PhotoRow(photo: Photo, paused: Boolean, share: () -> Unit, retry: () -> Unit, selected: Boolean, select: (Boolean) -> Unit, selectionEnabled: Boolean, localStatus: String?, retryReplacement: (() -> Unit)?, selectable: Boolean = true, open: () -> Unit) {
     Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (photo.status == "ready") Checkbox(checked = selected, onCheckedChange = select, enabled = selectionEnabled)
+        Row(Modifier.fillMaxWidth().clickable(onClickLabel = "Open ${photo.name}", onClick = open), verticalAlignment = Alignment.CenterVertically) {
+            // Reserve the selection gutter before completion; the thumbnail never jumps.
+            if (selectable) Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) {
+                if (photo.status == "ready") Checkbox(checked = selected, onCheckedChange = select, enabled = selectionEnabled)
+            }
             AsyncImage(model = photo.preview, contentDescription = photo.name, contentScale = ContentScale.Crop, modifier = Modifier.size(72.dp).clip(RoundedCornerShape(14.dp)).background(Line))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
@@ -539,75 +549,9 @@ private val Green = Color(0xFF33684C)
         }
         if (localStatus != null) Text(localStatus, fontSize = 11.sp, color = if (retryReplacement != null) Orange else Green, modifier = Modifier.padding(top = 6.dp))
         if (retryReplacement != null) TextButton(onClick = retryReplacement, enabled = selectionEnabled) { Text("Retry replacement") }
-        if (photo.status == "ready") {
-            TextButton(onClick = googlePhotos, modifier = Modifier.align(Alignment.End)) {
-                Icon(Icons.Outlined.CloudUpload, null, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(when (backupStage) {
-                    BackupStage.USER_VERIFIED -> "Backup reviewed · next steps"
-                    BackupStage.SENT -> "Google Photos · check backup"
-                    BackupStage.NOT_SENT -> "Save to Google Photos"
-                }, fontSize = 12.sp)
-            }
-        }
         if (photo.status == "failed" && photo.error != null) Text(photo.error, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
         HorizontalDivider(Modifier.padding(top = 18.dp), color = Line)
     }
 }
 
-@Composable private fun GooglePhotosDialog(photo: Photo, stage: BackupStage, dismiss: () -> Unit, send: () -> Unit, open: () -> Unit, verify: () -> Unit) {
-    var checkedBackup by remember(photo.id, photo.output, photo.outputBytes, stage) { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = dismiss,
-        title = { Text("Back up a lighter copy", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(Modifier.heightIn(max = 510.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(photo.name, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (File(photo.input).exists()) Column(Modifier.weight(1f)) {
-                        AsyncImage(File(photo.input), "Original photo preview", contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxWidth().height(130.dp).clip(RoundedCornerShape(12.dp)).background(Line))
-                        Text(if (File(photo.input).exists()) "Original · ${bytes(photo.inputBytes)}" else "Original removed", fontSize = 12.sp)
-                    }
-                    Column(Modifier.weight(1f)) {
-                        AsyncImage(photo.preview, "Lighter photo preview", contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxWidth().height(130.dp).clip(RoundedCornerShape(12.dp)).background(Line))
-                        Text("Lighter · ${bytes(photo.outputBytes ?: 0)}", fontSize = 12.sp, color = Green)
-                    }
-                }
-                if ((photo.outputBytes ?: photo.inputBytes) >= photo.inputBytes) {
-                    Text("This JPEG is not smaller than the original. Keeping the original avoids increasing storage use.", color = Orange)
-                }
-                when (stage) {
-                    BackupStage.NOT_SENT -> Text("Review the quality, then send this smaller copy to Google Photos. Choose the correct account and finish saving it there. Sending does not delete any original.")
-                    BackupStage.SENT -> {
-                        Text("The copy was handed to Google Photos. PichaLite cannot tell whether you saved it, cancelled, or finished backing it up.")
-                        Text("Open Google Photos, check the correct account, open the smaller copy and confirm backup has finished.")
-                        Row(Modifier.fillMaxWidth().toggleable(value = checkedBackup, onValueChange = { checkedBackup = it }), verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = checkedBackup, onCheckedChange = null)
-                            Text("I checked the smaller copy and confirmed its cloud backup finished.", fontSize = 13.sp)
-                        }
-                        Button(onClick = verify, enabled = checkedBackup, modifier = Modifier.fillMaxWidth()) { Text("Record my check") }
-                    }
-                    BackupStage.USER_VERIFIED -> {
-                        Text("You marked the smaller copy as backed up. This is your confirmation, not an automatic cloud check.", color = Green)
-                        Text("If you want to remove the original:", fontWeight = FontWeight.Bold)
-                        Text("1. Open Google Photos and identify the original by its image, filename and larger file size.\n2. Keep the verified smaller copy.\n3. Select only the original and move it to Trash yourself.")
-                        Text("Deleting in Google Photos may also remove synced device copies and album entries. PichaLite cannot undo it or remove cloud originals for you.", color = Orange)
-                    }
-                }
-                OutlinedButton(onClick = open, modifier = Modifier.fillMaxWidth()) { Text("Open Google Photos") }
-                Text("Sending a smaller copy alone does not free cloud storage. Original removal is manual.", fontSize = 12.sp, color = Muted)
-            }
-        },
-        confirmButton = { TextButton(onClick = send) { Text(if (stage == BackupStage.NOT_SENT) "Send lighter copy" else "Send again") } },
-        dismissButton = { TextButton(onClick = dismiss) { Text("Close") } }
-    )
-}
-
-private fun bytes(value: Long): String = when {
-    value >= 1024 * 1024 -> String.format(java.util.Locale.US, "%.1f MB", value / (1024.0 * 1024))
-    value >= 1024 -> String.format(java.util.Locale.US, "%.0f KB", value / 1024.0)
-    else -> "$value B"
-}
-
+internal fun bytes(value: Long): String = wrappedBytes(value)
