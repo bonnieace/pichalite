@@ -262,16 +262,24 @@ private val Green = Color(0xFF33684C)
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     val selected = model.selectedPhotos
     @Suppress("UNUSED_VARIABLE") val localVersion = model.localVersion
-    val files = rememberLauncherForActivityResult(LocalImagesContract()) { model.importLocal(it) }
+    val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val requestNotifications: () -> Unit = {
+        if (Build.VERSION.SDK_INT >= 33) notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+    val files = rememberLauncherForActivityResult(LocalImagesContract()) {
+        model.importLocal(it)
+        if (it.uris.isNotEmpty()) requestNotifications()
+    }
     val folder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             model.saveToFolder(uri)
         }
     }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { model.importPhotos(it) }
-    val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) {
+        model.importPhotos(it)
+        if (it.isNotEmpty()) requestNotifications()
+    }
     val addPhotos: () -> Unit = {
-        if (Build.VERSION.SDK_INT >= 33) notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     }
     val ready = state.photos.count { it.status == "ready" }
@@ -356,12 +364,12 @@ private val Green = Color(0xFF33684C)
                     }
                     if (selected.isNotEmpty()) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { folder.launch(null) }, enabled = !model.working, modifier = Modifier.weight(1f)) { Text("Save to folder") }
+                            Button(onClick = { folder.launch(null) }, enabled = !model.working, modifier = Modifier.weight(1f)) { Text("Save to folder", fontSize = 12.sp, maxLines = 1) }
                             if (Build.VERSION.SDK_INT >= 29) OutlinedButton(onClick = { model.saveToGallery() }, enabled = !model.working, modifier = Modifier.weight(1f)) { Text("Gallery") }
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = { onBatchShare(selected) }, enabled = !model.working, modifier = Modifier.weight(1f)) { Text("Share") }
-                            OutlinedButton(onClick = { onBatchGooglePhotos(selected) }, enabled = !model.working, modifier = Modifier.weight(1f)) { Text("Google Photos") }
+                            OutlinedButton(onClick = { onBatchGooglePhotos(selected) }, enabled = !model.working, modifier = Modifier.weight(1f)) { Text("Google Photos", fontSize = 12.sp, maxLines = 1) }
                         }
                         val eligible = selected.count { model.localFiles.canRequestDeletion(it) }
                         TextButton(onClick = { confirmDelete = true }, enabled = !model.working && eligible == selected.size, modifier = Modifier.fillMaxWidth()) {

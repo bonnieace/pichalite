@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
-        <!-- Private fixtures for instrumentation; absent from release builds. -->
-        <provider android:name=".TestDocumentsProvider" android:authorities="${applicationId}.testdocuments" android:exported="false" android:grantUriPermissions="true">
+        <!-- System-protected fixtures for instrumentation; absent from release builds. -->
+        <provider android:name=".TestDocumentsProvider" android:authorities="${applicationId}.testdocuments" android:exported="true" android:permission="android.permission.MANAGE_DOCUMENTS" android:grantUriPermissions="true">
             <intent-filter><action android:name="android.content.action.DOCUMENTS_PROVIDER" /></intent-filter>
         </provider>
     </application>

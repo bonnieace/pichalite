@@ -7,6 +7,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.Dispatchers
@@ -110,6 +111,21 @@ class LocalPhotoFilesTest {
             assertFalse(store.canRequestDeletion(photo))
             context.contentResolver.openInputStream(exported)!!.use { assertArrayEquals(File(photo.output!!).readBytes(), it.readBytes()) }
         } finally { DocumentsContract.deleteDocument(context.contentResolver, exported) }
+    }
+
+    @Test fun galleryCopyIsPublishedAndRetainedAfterLocalCleanup() = fixture { photo, store, _, source ->
+        val exported = store.exportToGallery(photo)
+        try {
+            assertEquals(MediaStore.AUTHORITY, exported.authority)
+            context.contentResolver.query(exported, arrayOf(MediaStore.Images.Media.IS_PENDING), null, null, null)!!.use {
+                assertTrue(it.moveToFirst())
+                assertEquals(0, it.getInt(0))
+            }
+            assertTrue(store.canRequestDeletion(photo))
+            store.deleteOriginal(photo)
+            assertFalse(source.exists())
+            context.contentResolver.openInputStream(exported)!!.use { assertArrayEquals(File(photo.output!!).readBytes(), it.readBytes()) }
+        } finally { context.contentResolver.delete(exported, null, null) }
     }
 
     @Test fun changedOrMissingExportNeverDeletesOriginal() = fixture { photo, store, _, source ->

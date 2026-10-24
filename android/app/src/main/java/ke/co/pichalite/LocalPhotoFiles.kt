@@ -8,6 +8,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Process
+import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import androidx.activity.result.contract.ActivityResultContract
@@ -125,9 +126,18 @@ class LocalPhotoFiles(
     }
 
     private fun copyAndVerify(file: File, uri: Uri) {
-        checkNotNull(resolver.openOutputStream(uri, "w")) { "Could not open the destination" }.use { out ->
-            file.inputStream().use { it.copyTo(out) }
-            out.flush()
+        if (uri.authority in localAuthorities || uri.authority == MediaStore.AUTHORITY) {
+            val descriptor = checkNotNull(resolver.openFileDescriptor(uri, "w")) { "Could not open the destination" }
+            ParcelFileDescriptor.AutoCloseOutputStream(descriptor).use { out ->
+                file.inputStream().use { it.copyTo(out) }
+                out.flush()
+                out.fd.sync()
+            }
+        } else {
+            checkNotNull(resolver.openOutputStream(uri, "w")) { "Could not open the destination" }.use { out ->
+                file.inputStream().use { it.copyTo(out) }
+                out.flush()
+            }
         }
         check(digest(uri) == digest(file)) { "The saved copy could not be verified; the original is untouched" }
     }
