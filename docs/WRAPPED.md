@@ -48,3 +48,17 @@ missing-cache behavior and independence from row order passed.
 The emulator scenarios, actual share-sheet handoff, visual screenshot review and
 signed phone APK remain pending the GitHub CI run. No device test is claimed by
 the local JVM check.
+
+## Distributable preview signing
+
+GitHub Actions caches are scoped to branches and PR refs. A new branch can
+generate a different debug key even when it uses the same cache key string.
+CI test APKs must therefore not be assumed to update an installed preview.
+
+The downloadable phone APK is signed with the recovered 0.4 preview identity,
+kept privately as `PichaLite-preview04-signing.keystore`. Future phone releases
+must reuse that identity, retain `ke.co.pichalite.preview04`, and increase the
+version code. Its SHA-256 certificate fingerprint is
+`aaaf22daec44f38d126a32675bede3196a85c5ad4e05189f456beceea2aa066a`.
+Verify the signature and unchanged APK payload after signing; never suggest
+uninstalling the previous preview to work around a signing mismatch.

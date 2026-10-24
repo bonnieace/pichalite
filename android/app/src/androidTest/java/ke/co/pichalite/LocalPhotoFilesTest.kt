@@ -181,7 +181,7 @@ class LocalPhotoFilesTest {
             val reopened = LocalPhotoFiles(context, "local-files-${photo.id}", setOf(authority))
             assertNull(reopened.replaceWhenReady(photo, foreground = true))
             assertEquals(exported, automaticExport(photo))
-            assertTrue(reopened.replacementStatus(photo)!!.startsWith("Replaced"))
+            assertEquals("Compressed", reopened.replacementStatus(photo))
         } finally { automaticExport(photo)?.let { context.contentResolver.delete(it, null, null) } }
     }
 
