@@ -438,7 +438,17 @@ private val Green = Color(0xFF33684C)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Your photo queue", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                            Text(if (state.paused) "Paused · saved safely for later" else if (state.pending > 0) "${state.pending} waiting or processing" else "All caught up", fontSize = 12.sp, color = Muted)
+                            val waitingForPermission = state.photos.count { !model.localFiles.wasDeleted(it) && model.localFiles.replacementState(it) == "awaiting" }
+                            val needsAttention = state.photos.count { model.localFiles.canRetryReplacement(it) }
+                            val replacing = state.photos.count { it.status == "ready" && model.localFiles.hasLocalSource(it) && !model.localFiles.cacheReleased(it) && !model.localFiles.canRetryReplacement(it) && model.localFiles.replacementState(it) != "not_smaller" && (!model.localFiles.wasDeleted(it) || model.localFiles.hasExport(it)) }
+                            Text(when {
+                                state.paused -> "Paused · saved safely for later"
+                                state.pending > 0 -> "${state.completed} compressed · ${state.pending} remaining"
+                                waitingForPermission > 0 -> "Waiting for Android permission for $waitingForPermission photos"
+                                replacing > 0 -> "Saving and replacing $replacing photos…"
+                                needsAttention > 0 -> "$needsAttention originals kept · retry replacement below"
+                                else -> "Finished · totals saved"
+                            }, fontSize = 12.sp, color = Muted)
                         }
                         if (state.pending > 0 || state.paused) TextButton(onClick = { model.togglePause() }) {
                             Icon(if (state.paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause, null, modifier = Modifier.size(18.dp)); Text(if (state.paused) "Resume" else "Pause")
