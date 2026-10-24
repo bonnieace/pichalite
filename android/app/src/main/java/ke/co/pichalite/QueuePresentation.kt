@@ -40,7 +40,7 @@ internal fun LazyListScope.photoQueue(
     val photos = if (readyTab) state.photos.filter { it.status == "ready" } else state.photos
     when {
         streaming -> item(key = "queue_activity", contentType = "activity") {
-            QueueActivity(importing, importedCount, importTotal, state.pending)
+            QueueActivity(importing, importedCount, importTotal, state.pending, state.paused)
         }
         !state.loaded -> item(key = "queue_loading") { LinearProgressIndicator(Modifier.fillMaxWidth(), color = Orange) }
         photos.isEmpty() -> item(key = "queue_empty") {
@@ -76,27 +76,44 @@ internal fun LazyListScope.photoQueue(
     }
 }
 
-@Composable internal fun QueueActivity(importing: Boolean, importedCount: Int, importTotal: Int, pending: Int) {
-    val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.photo_queue))
+internal enum class QueueAnimation(val resource: Int, val label: String) {
+    IMPORT(R.raw.photo_upload, "Bringing your photos in"),
+    COMPRESSION(R.raw.photo_compression, "Making room for more"),
+    PROCESSING(R.raw.photo_processing, "Importing & compressing"),
+}
+
+internal fun queueAnimation(importing: Boolean, pending: Int, paused: Boolean): QueueAnimation = when {
+    importing && pending > 0 && !paused -> QueueAnimation.PROCESSING
+    importing -> QueueAnimation.IMPORT
+    else -> QueueAnimation.COMPRESSION
+}
+
+@Composable internal fun QueueActivity(importing: Boolean, importedCount: Int, importTotal: Int, pending: Int, paused: Boolean = false) {
+    val stage = queueAnimation(importing, pending, paused)
+    val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(stage.resource))
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color(0xFFF1EFE7))
             .padding(horizontal = 20.dp, vertical = 16.dp).testTag("queue_activity"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Bundled vector animation: no download, thumbnails or growing list during a run.
-        Box(Modifier.size(144.dp), contentAlignment = Alignment.Center) {
-            if (composition == null) Icon(Icons.Outlined.PhotoLibrary, null, tint = Orange, modifier = Modifier.size(44.dp))
-            LottieAnimation(composition, iterations = LottieConstants.IterateForever, modifier = Modifier.fillMaxSize())
+        // One bundled Lottie at a time, with a dedicated combined-processing state.
+        key(stage) {
+            Box(Modifier.size(144.dp).testTag("queue_animation"), contentAlignment = Alignment.Center) {
+                if (composition == null) Icon(Icons.Outlined.PhotoLibrary, null, tint = Orange, modifier = Modifier.size(44.dp))
+                LottieAnimation(composition, iterations = LottieConstants.IterateForever, modifier = Modifier.fillMaxSize())
+            }
         }
-        Text(if (importing) "Bringing your photos in" else "Making room for more", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+        Text(stage.label, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
         Spacer(Modifier.height(6.dp))
-        Text(
-            if (importing) "$importedCount of $importTotal imported" else "$pending photo${if (pending == 1) "" else "s"} remaining",
-            color = Muted, fontSize = 12.sp,
-        )
+        Text(when (stage) {
+            QueueAnimation.PROCESSING -> "$importedCount of $importTotal imported · $pending remaining"
+            QueueAnimation.IMPORT -> "$importedCount of $importTotal imported"
+            QueueAnimation.COMPRESSION -> "$pending photo${if (pending == 1) "" else "s"} remaining"
+        }, color = Muted, fontSize = 12.sp)
         Spacer(Modifier.height(10.dp))
-        Text("Finished photos are available in Ready.\nYour queue will appear here when this batch settles.", color = Muted, fontSize = 12.sp,
-            textAlign = TextAlign.Center, lineHeight = 18.sp, minLines = 2)
+        Text(if (paused) "Compression resumes when you unpause.\nFinished photos are available in Ready."
+            else "Each photo starts compressing as soon as it arrives.\nFinished photos are available in Ready.",
+            color = Muted, fontSize = 12.sp, textAlign = TextAlign.Center, lineHeight = 18.sp, minLines = 2)
     }
 }
 

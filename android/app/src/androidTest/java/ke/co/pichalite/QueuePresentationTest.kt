@@ -132,18 +132,50 @@ class QueuePresentationTest {
         compose.onNodeWithText("620 photos imported.").assertDoesNotExist()
     }
 
-    @Test fun bundledLottieParsesAndDrawsOffline() {
+    @Test fun studioAndWrappedBothUseGigabytesForLargeTotals() {
+        val gb = 1024L * 1024 * 1024
+        assertEquals("0 B", bytes(0))
+        assertEquals("1.0 MB", bytes(1024L * 1024))
+        assertEquals("1.00 GB", bytes(gb))
+        assertEquals("2.50 GB", bytes(gb * 5 / 2))
+        assertEquals(wrappedBytes(gb * 10), bytes(gb * 10))
+    }
+
+    @Test fun simultaneousStagesUseOneProcessingAnimationAndSwitchAsWorkFinishes() {
+        var importing by mutableStateOf(true)
+        var pending by mutableIntStateOf(3)
+        compose.setContent { MaterialTheme { QueueActivity(importing, 8, 100, pending) } }
+        compose.onAllNodesWithTag("queue_animation").assertCountEquals(1)
+        compose.onNodeWithText("Importing & compressing").assertIsDisplayed()
+        compose.onNodeWithText("8 of 100 imported · 3 remaining").assertIsDisplayed()
+        assertEquals(QueueAnimation.PROCESSING, queueAnimation(true, 3, false))
+        screenshot("combined-processing")
+        compose.runOnIdle { pending = 0 }
+        compose.onAllNodesWithTag("queue_animation").assertCountEquals(1)
+        compose.onNodeWithText("Bringing your photos in").assertIsDisplayed()
+        assertEquals(QueueAnimation.IMPORT, queueAnimation(true, 0, false))
+        assertEquals(QueueAnimation.IMPORT, queueAnimation(true, 3, true))
+        compose.runOnIdle { importing = false; pending = 3 }
+        compose.onAllNodesWithTag("queue_animation").assertCountEquals(1)
+        compose.onNodeWithText("Making room for more").assertIsDisplayed()
+        assertEquals(QueueAnimation.COMPRESSION, queueAnimation(false, 3, false))
+        screenshot("compressing")
+    }
+
+    @Test fun bundledLottiesParseAndDrawOffline() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val result = LottieCompositionFactory.fromRawResSync(context, R.raw.photo_queue)
-        assertNull(result.exception)
-        val composition = checkNotNull(result.value)
-        assertTrue(composition.duration > 0)
-        val drawable = LottieDrawable().apply { setComposition(composition); progress = 0.5f; setBounds(0, 0, 240, 240) }
-        val bitmap = Bitmap.createBitmap(240, 240, Bitmap.Config.ARGB_8888)
-        drawable.draw(Canvas(bitmap))
-        val pixels = IntArray(240 * 240)
-        bitmap.getPixels(pixels, 0, 240, 0, 0, 240, 240)
-        assertTrue("The animation must contain visible artwork", pixels.count { (it ushr 24) > 0 } > 1000)
-        bitmap.recycle()
+        for (resource in listOf(R.raw.photo_upload, R.raw.photo_compression, R.raw.photo_processing)) {
+            val result = LottieCompositionFactory.fromRawResSync(context, resource)
+            assertNull(result.exception)
+            val composition = checkNotNull(result.value)
+            assertTrue(composition.duration > 0)
+            val drawable = LottieDrawable().apply { setComposition(composition); progress = 0.5f; setBounds(0, 0, 240, 240) }
+            val bitmap = Bitmap.createBitmap(240, 240, Bitmap.Config.ARGB_8888)
+            drawable.draw(Canvas(bitmap))
+            val pixels = IntArray(240 * 240)
+            bitmap.getPixels(pixels, 0, 240, 0, 0, 240, 240)
+            assertTrue("The animation must contain visible artwork", pixels.count { (it ushr 24) > 0 } > 1000)
+            bitmap.recycle()
+        }
     }
 }

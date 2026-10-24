@@ -214,9 +214,13 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
         var added = 0
         val errors = mutableListOf<String>()
         try {
-            for (uri in uris.distinct()) {
-                try {
-                    val input = withContext(Dispatchers.IO) {
+            // Copy up to two provider streams while the native worker compresses
+            // each completed file. Never wait for the rest of the batch or a
+            // save/replacement pass before handing the next photo to the queue.
+            importInParallel(
+                items = uris.distinct(),
+                transfer = { uri ->
+                    withContext(Dispatchers.IO) {
                         val resolver = context.contentResolver
                         val mime = resolver.getType(uri)
                         val extension = when (mime) { "image/jpeg" -> "jpg"; "image/png" -> "png"; "image/webp" -> "webp"; else -> error("Use JPEG, PNG or WebP photos") }
@@ -232,6 +236,7 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
                                     val buffer = ByteArray(64 * 1024)
                                     var total = 0L
                                     while (true) {
+                                        currentCoroutineContext().ensureActive()
                                         val count = source.read(buffer)
                                         if (count < 0) break
                                         total += count
@@ -248,13 +253,15 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
                             destination
                         } finally { part.delete() }
                     }
+                },
+                onImported = { input ->
                     RuntimeGateway.call(context, JSONObject().put("action", "enqueue").put("input", input.absolutePath))
                     added++
                     importedCount = added
-                    refresh()
                     if (!state.paused) startProcessing()
-                } catch (e: Exception) { if (e is CancellationException) throw e; errors += e.message ?: "A photo could not be imported" }
-            }
+                },
+                onFailure = { errors += it.message ?: "A photo could not be imported" },
+            )
             refresh()
             if (added > 0 && !state.paused) startProcessing()
             showMessage("$added photo${if (added == 1) "" else "s"} imported." + if (errors.isEmpty()) "" else " ${errors.first()}", isError = errors.isNotEmpty())
@@ -520,9 +527,4 @@ internal val Green = Color(0xFF33684C)
     }
 }
 
-private fun bytes(value: Long): String = when {
-    value >= 1024 * 1024 -> String.format(java.util.Locale.US, "%.1f MB", value / (1024.0 * 1024))
-    value >= 1024 -> String.format(java.util.Locale.US, "%.0f KB", value / 1024.0)
-    else -> "$value B"
-}
-
+internal fun bytes(value: Long): String = wrappedBytes(value)
