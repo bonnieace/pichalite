@@ -156,3 +156,11 @@ qualify for the physical-device bonus.
 
 MIT licensed. See `LICENSE`.
 
+
+### Local replacement in preview 0.3.1
+
+Choose **Compress local photos** to compress, automatically save the smaller
+image to Gallery, and delete its verified unchanged original in one flow. Allow
+Android's replacement permission when requested; refusal keeps the original and
+shows Retry replacement. The old separate cleanup button is removed. Cloud
+imports keep cloud originals. See [local flow details](docs/LOCAL_FILES.md).

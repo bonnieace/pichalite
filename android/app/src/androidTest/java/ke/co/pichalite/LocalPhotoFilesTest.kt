@@ -167,6 +167,81 @@ class LocalPhotoFilesTest {
         } finally { DocumentsContract.deleteDocument(context.contentResolver, exported) }
     }
 
+    private fun automaticExport(photo: Photo): Uri? = context.getSharedPreferences("local-files-${photo.id}", 0)
+        .getString("export:${photo.id}", null)?.let { Uri.parse(JSONObject(it).getString("uri")) }
+
+    @Test fun compressionFlowAutomaticallySavesAndReplacesOnceAcrossRestart() = fixture { photo, store, _, source ->
+        try {
+            assertNull(store.replaceWhenReady(photo))
+            assertFalse(source.exists())
+            assertFalse(File(photo.input).exists())
+            assertTrue(store.wasDeleted(photo))
+            val exported = automaticExport(photo)!!
+            context.contentResolver.openInputStream(exported)!!.use { assertArrayEquals(File(photo.output!!).readBytes(), it.readBytes()) }
+            val reopened = LocalPhotoFiles(context, "local-files-${photo.id}", setOf(authority))
+            assertNull(reopened.replaceWhenReady(photo, foreground = true))
+            assertEquals(exported, automaticExport(photo))
+            assertTrue(reopened.replacementStatus(photo)!!.startsWith("Replaced"))
+        } finally { automaticExport(photo)?.let { context.contentResolver.delete(it, null, null) } }
+    }
+
+    @Test fun autoReplacementSkipsPendingNonSmallerAndUnknownSources() = fixture { photo, store, _, source ->
+        assertNull(store.replaceWhenReady(photo.copy(status = "processing")))
+        assertNull(store.replaceWhenReady(photo.copy(outputBytes = photo.inputBytes)))
+        assertTrue(source.exists())
+        assertFalse(store.hasExport(photo))
+        assertEquals("not_smaller", store.replacementState(photo))
+        assertNull(LocalPhotoFiles(context).replaceWhenReady(photo, foreground = true))
+        assertFalse(LocalPhotoFiles(context).hasExport(photo))
+    }
+
+    @Test fun declinedReplacementStaysPausedAcrossRestartAndReusesSavedCopyOnRetry() = fixture { photo, store, _, source ->
+        val exported = store.exportToGallery(photo)
+        try {
+            store.declineReplacement(photo)
+            val reopened = LocalPhotoFiles(context, "local-files-${photo.id}", setOf(authority))
+            assertNull(reopened.replaceWhenReady(photo, foreground = true))
+            assertTrue(source.exists())
+            assertTrue(reopened.canRetryReplacement(photo))
+            assertEquals("kept", reopened.replacementState(photo))
+            reopened.replaceWhenReady(photo, foreground = true, retry = true)
+            assertFalse(source.exists())
+            assertTrue(reopened.wasDeleted(photo))
+            assertEquals(exported, automaticExport(photo))
+        } finally { context.contentResolver.delete(exported, null, null) }
+    }
+
+    @Test fun missingSavedCopyStopsAutomaticReplacementWithoutCreatingAnotherCopy() = fixture { photo, store, _, source ->
+        val exported = store.exportToGallery(photo)
+        context.contentResolver.delete(exported, null, null)
+        assertNull(store.replaceWhenReady(photo, foreground = true))
+        assertTrue(source.exists())
+        assertEquals("error", store.replacementState(photo))
+        assertTrue(store.canRetryReplacement(photo))
+        assertEquals(exported, automaticExport(photo))
+        // A later refresh must not repeatedly retry an error or silently create duplicates.
+        store.replaceWhenReady(photo, foreground = true)
+        assertTrue(source.exists())
+        assertEquals(exported, automaticExport(photo))
+    }
+
+    @Test fun autoReplacementDoesNotDeleteChangedSourceAndResumesSavedExportAfterRestart() = fixture { photo, store, _, source ->
+        val exported = store.exportToGallery(photo)
+        val bytes = source.readBytes()
+        try {
+            source.appendBytes(byteArrayOf(42))
+            store.replaceWhenReady(photo)
+            assertTrue(source.exists())
+            assertEquals("error", store.replacementState(photo))
+            source.writeBytes(bytes)
+            val reopened = LocalPhotoFiles(context, "local-files-${photo.id}", setOf(authority))
+            reopened.replaceWhenReady(photo, retry = true)
+            assertTrue(reopened.wasDeleted(photo))
+            assertFalse(source.exists())
+            assertEquals(exported, automaticExport(photo))
+        } finally { context.contentResolver.delete(exported, null, null) }
+    }
+
     @Suppress("DEPRECATION")
     @Test fun batchShareGrantsEveryFinishedCopyAndNoOriginals() = fixture { first, _, _, _ ->
         fixture { second, _, _, _ ->
