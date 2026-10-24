@@ -25,9 +25,9 @@ android {
         getByName("debug") {
             // CI debug keys can change between runners. Install this preview beside
             // 0.1.0 instead of asking users to uninstall and lose their private queue.
-            applicationIdSuffix = ".preview"
+            applicationIdSuffix = ".preview03"
             versionNameSuffix = "-preview"
-            resValue("string", "app_name", "PichaLite Preview")
+            resValue("string", "app_name", "PichaLite 0.3 Preview")
         }
     }
     buildFeatures { compose = true }

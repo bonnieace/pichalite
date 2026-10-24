@@ -3,6 +3,9 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -69,6 +72,10 @@ jobs:
           working-directory: android
           script: |
             ./gradlew --no-daemon connectedDebugAndroidTest || { adb logcat -d -t 500; exit 1; }
+            mkdir -p app/build/reports/ui
+            adb shell am start -n ke.co.pichalite.preview03/ke.co.pichalite.MainActivity
+            sleep 3
+            adb exec-out screencap -p > app/build/reports/ui/studio.png
       - name: Android instrumentation reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -77,6 +84,7 @@ jobs:
           path: |
             android/app/build/reports/androidTests/
             android/app/build/outputs/androidTest-results/
+            android/app/build/reports/ui/
           if-no-files-found: ignore
           retention-days: 3
 

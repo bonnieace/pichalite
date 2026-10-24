@@ -142,7 +142,9 @@ class LocalPhotoFiles(
         if (wasDeleted(photo) || photo.status != "ready" || !hasExport(photo)) return false
         if ((photo.outputBytes ?: Long.MAX_VALUE) >= photo.inputBytes) return false
         val uri = source(photo)?.optString("uri")?.let(Uri::parse) ?: return false
-        return uri.authority in localAuthorities
+        val exported = prefs.getString("export:${photo.id}", null)?.let(::JSONObject) ?: return false
+        val destination = Uri.parse(exported.getString("uri"))
+        return uri.authority in localAuthorities && (destination.authority in localAuthorities || destination.authority == MediaStore.AUTHORITY)
     }
 
     fun deleteOriginal(photo: Photo) {

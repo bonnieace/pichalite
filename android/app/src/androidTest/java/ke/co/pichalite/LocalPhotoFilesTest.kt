@@ -1,6 +1,7 @@
 package ke.co.pichalite
 
 import android.app.Activity
+import android.app.Application
 import android.content.ClipData
 import android.content.Intent
 import android.graphics.Bitmap
@@ -8,6 +9,10 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -61,6 +66,32 @@ class LocalPhotoFilesTest {
         val clip = ClipData.newRawUri("photos", uris.first()).apply { uris.drop(1).forEach { addItem(ClipData.Item(it)) } }
         assertEquals(uris, contract.parseResult(Activity.RESULT_OK, Intent().apply { clipData = clip }).uris)
         assertTrue(contract.parseResult(Activity.RESULT_CANCELED, intent).uris.isEmpty())
+    }
+
+    @Test fun actualImporterQueuesEveryPhotoAboveThirty() = runBlocking {
+        RuntimeGateway.call(context, JSONObject().put("action", "pause").put("paused", true))
+        val batch = UUID.randomUUID().toString()
+        val sourceFiles = (1..35).map { index ->
+            File(context.cacheDir, "test-documents/bulk-$batch-$index.png").apply {
+                parentFile!!.mkdirs()
+                val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
+                outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                bitmap.recycle()
+            }
+        }
+        val model = withContext(Dispatchers.Main) { PhotoModel(context.applicationContext as Application) }
+        try {
+            val job = withContext(Dispatchers.Main) {
+                model.importPhotos(sourceFiles.map { DocumentsContract.buildDocumentUri(authority, it.name) }, local = true)
+            }
+            job.join()
+            val imported = withContext(Dispatchers.Main) { model.state.photos.filter { it.name.contains("bulk-$batch-") } }
+            assertEquals("No selected photos may be silently truncated", 35, imported.size)
+            assertTrue(imported.all { File(it.input).isFile })
+        } finally {
+            sourceFiles.forEach { it.delete() }
+            RuntimeGateway.stop()
+        }
     }
 
     @Test fun sourceCannotBeDeletedUntilAnExternalCopyIsVerified() = fixture { photo, store, _, source ->

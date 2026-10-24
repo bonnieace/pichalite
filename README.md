@@ -6,12 +6,17 @@
 Select photos, or share a batch from Gallery to PichaLite. A Rust worker resizes
 them to a maximum edge of 1600 pixels and encodes JPEG at quality 82. See the
 before/after sizes, pause your queue, and share finished photos to another app.
-Originals remain untouched by PichaLite. Compression needs no account or network.
+Compression needs no account or network. Local-original cleanup is optional and
+requires a smaller, verified external copy and explicit confirmation.
 Version **0.2.0** adds Android's cloud-capable photo picker and a guided handoff
 to the installed Google Photos app. Review the smaller copy, send it, then
 confirm backup yourself before viewing manual original-cleanup guidance.
 There is no automatic cloud deletion or API-level backup verification.
-See [Google Photos workflow and limitations](docs/GOOGLE_PHOTOS.md).
+Version **0.3.0** restores a separate Local files picker, removes the app's
+30-photo import cap, and adds finished-photo selection, batch folder/Gallery
+saves, sharing and Google Photos handoff.
+See [local files and cleanup](docs/LOCAL_FILES.md) and
+[Google Photos workflow and limitations](docs/GOOGLE_PHOTOS.md).
 
 ## Challenge requirements
 
@@ -58,7 +63,9 @@ debug APK for the challenge, not a Play Store release. ARM64 is for most phones;
 x86_64 supports the emulator. Android 8.0 / API 26 or newer is required.
 32-bit ARM and x86 devices are not supported by this APK.
 
-Open PichaLite and choose up to 30 photos, each up to 40 MB. JPEG, PNG and WebP
+Open PichaLite and choose a batch of photos, each up to 40 MB. The Photos / cloud
+picker still follows Android's device-specific selection maximum; Local files
+has no app-imposed count cap. JPEG, PNG and WebP
 are supported; HEIC, video and animated-image preservation are outside this
 first version. Output is JPEG, transparency is flattened onto white, and EXIF
 orientation is applied before resizing. Very large decoded images are rejected
