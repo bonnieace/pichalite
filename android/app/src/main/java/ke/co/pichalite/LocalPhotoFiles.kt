@@ -266,9 +266,9 @@ class LocalPhotoFiles(
             .putString("replacement-error:${photo.id}", error).commit()) { "Could not save replacement progress" }
     }
     fun batchReplacementPermission(photos: List<Photo>): PendingIntent = synchronized(replacementLock) {
-        check(Build.VERSION.SDK_INT >= 30)
         val uris = photos.map { checkNotNull(mediaUri(verifiedOriginal(it))) { "Could not resolve local replacement access" } }.distinct()
-        MediaStore.createWriteRequest(resolver, uris)
+        if (Build.VERSION.SDK_INT >= 30) MediaStore.createWriteRequest(resolver, uris)
+        else error("Grouped replacement permission requires Android 11 or newer")
     }
 
     fun declineReplacement(photo: Photo) = synchronized(replacementLock) { setReplacementState(photo, "kept") }
