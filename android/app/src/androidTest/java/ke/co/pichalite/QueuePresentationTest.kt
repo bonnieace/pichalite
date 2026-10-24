@@ -104,7 +104,7 @@ class QueuePresentationTest {
         var preview by mutableStateOf(false)
         var index by mutableIntStateOf(0)
         compose.setContent { MaterialTheme {
-            PhotoRow(current, false, {}, {}, {}, false, {}, true, null, null, open = { preview = true })
+            PhotoRow(current, false, {}, {}, false, {}, true, null, null, open = { preview = true })
             if (preview) PhotoPreviewDialog(photo(index + 1), index, 2, { preview = false }, { index-- }, { index++ }, {})
         } }
         val before = compose.onNodeWithContentDescription(current.name).fetchSemanticsNode().boundsInRoot.left

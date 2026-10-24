@@ -25,7 +25,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 
-@Composable internal fun PhotoPreviewDialog(photo: Photo, index: Int, total: Int, dismiss: () -> Unit, previous: () -> Unit, next: () -> Unit, share: () -> Unit, googlePhotos: (() -> Unit)? = null) {
+@Composable internal fun PhotoPreviewDialog(photo: Photo, index: Int, total: Int, dismiss: () -> Unit, previous: () -> Unit, next: () -> Unit, share: () -> Unit) {
     var zoom by remember(photo.id) { mutableFloatStateOf(1f) }
     var offset by remember(photo.id) { mutableStateOf(Offset.Zero) }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
@@ -51,10 +51,6 @@ import coil.compose.AsyncImage
                     onError = { unavailable = true }, onSuccess = { unavailable = false },
                     modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = zoom; scaleY = zoom; translationX = offset.x; translationY = offset.y })
                 if (unavailable) Text("This photo is no longer available.\nIt may have been moved or deleted.", color = Color.LightGray, modifier = Modifier.padding(24.dp))
-            }
-            if (photo.status == "ready" && googlePhotos != null) TextButton(onClick = googlePhotos, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-                Icon(Icons.Outlined.CloudUpload, null, tint = Color.White)
-                Spacer(Modifier.width(8.dp)); Text("Google Photos", color = Color.White)
             }
             Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 IconButton(onClick = previous, enabled = index > 0) { Icon(Icons.Outlined.ChevronLeft, "Previous photo", tint = if (index > 0) Color.White else Color.DarkGray) }

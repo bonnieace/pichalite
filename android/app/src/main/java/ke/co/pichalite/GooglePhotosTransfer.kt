@@ -3,6 +3,8 @@ package ke.co.pichalite
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.content.ComponentName
+import android.content.pm.PackageManager
 import androidx.core.content.FileProvider
 import java.io.File
 
@@ -88,6 +90,21 @@ object GooglePhotosSharing {
 
 /** Explicit URI grants for every finished item, including multi-photo handoffs. */
 object FinishedPhotosSharing {
+    /** Promote Photos inside the system chooser, retaining every other share target. */
+    fun chooser(context: Context, photos: List<Photo>): Intent {
+        val share = intent(context, photos)
+        val preferred = Intent(share).setPackage(GooglePhotosSharing.PACKAGE)
+        @Suppress("DEPRECATION")
+        val activity = context.packageManager.queryIntentActivities(preferred, PackageManager.MATCH_DEFAULT_ONLY)
+            .firstOrNull { it.activityInfo.exported && it.activityInfo.enabled && it.activityInfo.applicationInfo.enabled }
+        val component = activity?.activityInfo?.let { ComponentName(it.packageName, it.name) }
+        return chooser(share, component)
+    }
+
+    internal fun chooser(share: Intent, preferred: ComponentName?): Intent = Intent.createChooser(share, "Share lighter photos").apply {
+        if (preferred != null) putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(Intent(share).setComponent(preferred)))
+    }
+
     fun intent(context: Context, photos: List<Photo>, targetPackage: String? = null): Intent {
         check(photos.isNotEmpty()) { "Select at least one finished photo" }
         val uris = ArrayList(photos.distinctBy { it.id }.map {

@@ -1,4 +1,18 @@
-# Google Photos handoff (0.2.0)
+# Google Photos sharing (0.5.1)
+
+The import button is labeled **Google Photos**. Finished photos have one
+**Share** action, including in full-screen previews and batch selection.
+The Android share sheet promotes the installed Google Photos image handler
+using an initial intent while retaining the usual app choices and read-only
+grants. When Photos is unavailable, the ordinary share sheet still works.
+There are no separate Google Photos send buttons or backup-review dialog.
+
+Import and sharing are handoffs; PichaLite does not verify cloud backup or
+delete cloud originals. Compression runs on the phone. The first-launch
+motion graphic explains local compress → save/verify → replace, and can be
+replayed from Help. Already-small local originals are retained.
+
+## Historical flow (0.2.0)
 
 PichaLite imports user-selected photos, compresses a local copy, and hands a
 finished JPEG to the installed Google Photos app. Google Photos handles account

@@ -11,8 +11,8 @@ android {
         applicationId = "ke.co.pichalite"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.5.0"
+        versionCode = 8
+        versionName = "0.5.1"
         resValue("string", "app_name", "PichaLite")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -44,7 +44,14 @@ android {
     buildFeatures { compose = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
-    packaging { jniLibs { useLegacyPackaging = false } }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+            // The Rust build script already strips this release library.
+            keepDebugSymbols.add("**/libpichalite.so")
+            keepDebugSymbols.add("**/libandroidx.graphics.path.so")
+        }
+    }
 }
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.04.01"))

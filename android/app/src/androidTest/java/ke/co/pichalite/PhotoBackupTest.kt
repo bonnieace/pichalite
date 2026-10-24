@@ -14,6 +14,26 @@ import java.util.UUID
 class PhotoBackupTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
+    @Suppress("DEPRECATION")
+    @Test fun sharesheetPromotesPhotosAndKeepsTheUntargetedShareAndReadGrants() = withPhoto { photo ->
+        val share = FinishedPhotosSharing.intent(context, listOf(photo))
+        val preferred = android.content.ComponentName(GooglePhotosSharing.PACKAGE, "com.google.android.apps.photos.ShareActivity")
+        val chooser = FinishedPhotosSharing.chooser(share, preferred)
+        assertEquals(Intent.ACTION_CHOOSER, chooser.action)
+        val base = chooser.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)!!
+        assertNull(base.`package`)
+        assertNull(base.component)
+        val initial = chooser.getParcelableArrayExtra(Intent.EXTRA_INITIAL_INTENTS)!!
+        assertEquals(1, initial.size)
+        val photos = initial.single() as Intent
+        assertEquals(preferred, photos.component)
+        assertEquals(base.getParcelableExtra<Uri>(Intent.EXTRA_STREAM), photos.getParcelableExtra<Uri>(Intent.EXTRA_STREAM))
+        assertEquals(base.clipData!!.getItemAt(0).uri, photos.clipData!!.getItemAt(0).uri)
+        assertTrue(photos.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
+        assertEquals(0, photos.flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        assertFalse(FinishedPhotosSharing.chooser(share, null).hasExtra(Intent.EXTRA_INITIAL_INTENTS))
+    }
+
     private fun withPhoto(block: (Photo) -> Unit) {
         val id = UUID.randomUUID().toString()
         val root = RuntimeGateway.root(context)

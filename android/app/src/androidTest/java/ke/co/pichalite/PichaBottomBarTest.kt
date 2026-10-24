@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -25,6 +26,7 @@ class PichaBottomBarTest {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) { PichaBottomBar(selected, 2000) { selected = it } }
         } }
         compose.onNodeWithText("Studio").assertIsSelected()
+        compose.onNodeWithText("Studio").assertHeightIsEqualTo(48.dp)
         compose.onNodeWithText("Ready").performClick().assertIsSelected()
         compose.onNodeWithText("Wrapped").performClick().assertIsSelected()
         compose.onNodeWithText("Studio").assertIsNotSelected()

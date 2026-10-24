@@ -8,7 +8,10 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
-import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -250,7 +253,8 @@ internal object WrappedSharing {
 @Composable internal fun WrappedScreen(model: PhotoModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var page by rememberSaveable { mutableIntStateOf(0) }
+    val pager = rememberPagerState(pageCount = { WrappedArtwork.CARD_COUNT })
+    val page = pager.currentPage
     var sharing by remember { mutableStateOf(false) }
     // Freeze a recap on entry so cards and shares agree while another batch runs.
     val stats = remember(model.state.loaded) { WrappedStats.from(model.state, model.localFiles) }
@@ -280,21 +284,18 @@ internal object WrappedSharing {
         } else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 repeat(WrappedArtwork.CARD_COUNT) { index ->
-                    Box(Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(3.dp)).background(if (index == page) Orange else Line))
-                }
-            }
-            Box(Modifier.fillMaxWidth().aspectRatio(9f / 16f).clip(RoundedCornerShape(24.dp)).background(Ink).testTag("wrapped_artwork"), contentAlignment = Alignment.Center) {
-                Crossfade(targetState = page, label = "Wrapped card") { currentPage ->
-                    val artwork by produceState<Bitmap?>(null, stats, currentPage) {
-                        value = withContext(Dispatchers.Default) { WrappedArtwork.render(stats, currentPage, 540) }
+                    Box(Modifier.weight(1f).height(24.dp).clickable(onClickLabel = "Show Wrapped card ${index + 1}") {
+                        scope.launch { pager.animateScrollToPage(index) }
+                    }, contentAlignment = Alignment.Center) {
+                        Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(3.dp)).background(if (index == page) Orange else Line))
                     }
-                    artwork?.let { Image(it.asImageBitmap(), WrappedArtwork.description(stats, currentPage), Modifier.fillMaxSize()) }
                 }
             }
+            WrappedCardPager(stats, pager, Modifier.fillMaxWidth().aspectRatio(9f / 16f))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                IconButton(onClick = { page-- }, enabled = page > 0) { Icon(Icons.Outlined.ChevronLeft, "Previous Wrapped card") }
-                Text("${page + 1} of ${WrappedArtwork.CARD_COUNT}", color = Muted, fontSize = 12.sp)
-                IconButton(onClick = { page++ }, enabled = page < WrappedArtwork.CARD_COUNT - 1) { Icon(Icons.Outlined.ChevronRight, "Next Wrapped card") }
+                IconButton(onClick = { scope.launch { pager.animateScrollToPage(page - 1) } }, enabled = page > 0) { Icon(Icons.Outlined.ChevronLeft, "Previous Wrapped card") }
+                Text("${page + 1} of ${WrappedArtwork.CARD_COUNT} · Swipe to explore", color = Muted, fontSize = 12.sp)
+                IconButton(onClick = { scope.launch { pager.animateScrollToPage(page + 1) } }, enabled = page < WrappedArtwork.CARD_COUNT - 1) { Icon(Icons.Outlined.ChevronRight, "Next Wrapped card") }
             }
             Button(onClick = { share(page) }, enabled = !sharing, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)) {
                 Icon(Icons.Outlined.IosShare, null); Spacer(Modifier.width(8.dp))
@@ -303,6 +304,17 @@ internal object WrappedSharing {
             OutlinedButton(onClick = { share(null) }, enabled = !sharing, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Text("Share all 4 cards") }
             Text("A snapshot of your finished history. Reopen Wrapped to refresh. Only stats and graphics are shared; your photos and filenames stay private.", color = Muted, fontSize = 11.sp, lineHeight = 17.sp)
             if (model.messageIsError && model.message != null) PhotoNotice(model.message!!, true, model::dismissMessage)
+        }
+    }
+}
+
+@Composable internal fun WrappedCardPager(stats: WrappedStats, pager: PagerState, modifier: Modifier = Modifier) {
+    HorizontalPager(state = pager, modifier = modifier.clip(RoundedCornerShape(24.dp)).background(Ink).testTag("wrapped_artwork")) { currentPage ->
+        val artwork by produceState<Bitmap?>(null, stats, currentPage) {
+            value = withContext(Dispatchers.Default) { WrappedArtwork.render(stats, currentPage, 540) }
+        }
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            artwork?.let { Image(it.asImageBitmap(), WrappedArtwork.description(stats, currentPage), Modifier.fillMaxSize()) }
         }
     }
 }

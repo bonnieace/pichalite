@@ -1,5 +1,19 @@
 # PichaLite 0.5 preview
 
+## 0.5.1 interaction update
+
+Wrapped cards support horizontal swipes, arrow controls and tappable card
+indicators. The bottom rail uses 48 dp destination touch targets in a 64 dp
+container, down from 96 dp, before system navigation insets.
+
+An automatic three-scene first-launch introduction demonstrates compression,
+verified Gallery saving and local original replacement, including upgrades
+that have never seen it. It pauses in the background, honors reduced motion,
+supports Skip/Next/Back and is replayable from Help. Completion is persisted.
+The repeated local-flow explanation and privacy footer are moved into this
+walkthrough. Google Photos stays as the import label, and sending is offered
+inside the regular Share sheet rather than through separate buttons.
+
 The custom bottom bar has Studio, Ready and Wrapped. Ready keeps its selection
 tools and finished-photo count; selections span pages. Lists use 50 photos per
 page without truncating imports, history or Select all. Tap a photo to open a
