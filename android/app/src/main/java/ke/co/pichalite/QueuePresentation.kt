@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -132,7 +133,10 @@ internal fun queueAnimation(importing: Boolean, pending: Int, paused: Boolean): 
     Box(Modifier.size(144.dp).testTag("queue_animation"), contentAlignment = Alignment.Center) {
         if (composition == null) Icon(Icons.Outlined.PhotoLibrary, null, tint = Orange, modifier = Modifier.size(44.dp))
         // Progress is read during drawing, never by the screen or queue layout.
-        LottieAnimation(composition, progress = { progress }, modifier = Modifier.fillMaxSize())
+        LottieAnimation(composition, progress = { progress }, modifier = Modifier.fillMaxSize().graphicsLayer {
+            // Reflect both the arrow and its travel, turning upload into download.
+            scaleY = if (stage == QueueAnimation.IMPORT) -1f else 1f
+        })
     }
 }
 

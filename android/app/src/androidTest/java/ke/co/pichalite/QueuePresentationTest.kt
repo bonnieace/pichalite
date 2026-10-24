@@ -189,7 +189,7 @@ class QueuePresentationTest {
             assertNull(result.exception)
             val composition = checkNotNull(result.value)
             assertTrue(composition.duration > 0)
-            val drawable = LottieDrawable().apply { setComposition(composition); progress = 0.5f; setBounds(0, 0, 240, 240) }
+            val drawable = LottieDrawable().apply { callback = android.widget.ImageView(context); setComposition(composition); progress = 0.5f; setBounds(0, 0, 240, 240) }
             val bitmap = Bitmap.createBitmap(240, 240, Bitmap.Config.ARGB_8888)
             drawable.draw(Canvas(bitmap))
             val pixels = IntArray(240 * 240)
