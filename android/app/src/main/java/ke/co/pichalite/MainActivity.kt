@@ -210,7 +210,10 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
         catch (e: Exception) { showMessage(e.message ?: "Could not complete this action") }
     }
     fun startProcessing() {
-        if (PhotoService.running) return
+        if (PhotoService.running) {
+            if (message == PROCESSING_WARNING) dismissMessage()
+            return
+        }
         try {
             ContextCompat.startForegroundService(context, Intent(context, PhotoService::class.java))
             if (message == PROCESSING_WARNING) dismissMessage()

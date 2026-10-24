@@ -41,6 +41,6 @@ class LocalQueueUiTest {
             try { LocalQueueUi.read(photos, files); fail("Metadata must never be prepared during composition") }
             catch (_: IllegalStateException) { }
         }
-        withContext(Dispatchers.IO) { context.deleteSharedPreferences(preferences) }
+        withContext(Dispatchers.IO) { context.deleteSharedPreferences(preferences); Unit }
     }
 }

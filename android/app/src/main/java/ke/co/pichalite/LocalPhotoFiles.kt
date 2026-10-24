@@ -46,7 +46,8 @@ class LocalPhotoFiles(
     preferenceName: String = "local_photo_files",
     private val localAuthorities: Set<String> = LOCAL_AUTHORITIES,
 ) {
-    private val sourceKeys = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private data class CachedSourceKey(val key: String, val present: Boolean)
+    private val sourceKeys = java.util.concurrent.ConcurrentHashMap<String, CachedSourceKey>()
     private val prefs = context.getSharedPreferences(preferenceName, Context.MODE_PRIVATE)
     private val resolver get() = context.contentResolver
 
@@ -69,17 +70,28 @@ class LocalPhotoFiles(
         }
     }
 
-    private fun sourceKey(photo: Photo): String = sourceKeys.getOrPut(photo.input) {
+    private fun sourceKey(photo: Photo): String {
+        sourceKeys[photo.input]?.let { cached ->
+            if (prefs.contains(cached.key)) {
+                if (!cached.present) sourceKeys[photo.input] = cached.copy(present = true)
+                return cached.key
+            }
+            if (!cached.present) return cached.key
+            // A previously found record moved (including legacy Android aliases).
+            // Re-resolve once, rather than retaining a stale positive cache entry.
+        }
         val canonical = File(photo.input).canonicalPath
         val key = "source:$canonical"
-        if (prefs.contains(key)) return@getOrPut key
         val original = "source:${photo.input}"
-        if (prefs.contains(original)) return@getOrPut original
-        // Android's /data/user/0 alias and Rust's canonical /data/data path refer
-        // to the same inbox. Retain access to source records from older imports.
-        prefs.all.keys.firstOrNull {
-            it.startsWith("source:") && File(it.removePrefix("source:")).canonicalPath == canonical
-        } ?: key
+        val resolved = when {
+            prefs.contains(key) -> key
+            prefs.contains(original) -> original
+            else -> prefs.all.keys.firstOrNull {
+                it.startsWith("source:") && File(it.removePrefix("source:")).canonicalPath == canonical
+            } ?: key
+        }
+        sourceKeys[photo.input] = CachedSourceKey(resolved, prefs.contains(resolved))
+        return resolved
     }
     private fun source(photo: Photo) = prefs.getString(sourceKey(photo), null)?.let(::JSONObject)
     fun wasDeleted(photo: Photo) = prefs.getBoolean("deleted:${sourceKey(photo).removePrefix("source:")}", false)
