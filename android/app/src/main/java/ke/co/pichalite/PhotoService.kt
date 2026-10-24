@@ -12,13 +12,19 @@ import kotlinx.coroutines.*
 import org.json.JSONObject
 
 class PhotoService : Service() {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    companion object {
+        @Volatile internal var importActive = false
+        @Volatile internal var running = false
+            private set
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var monitor: Job? = null
     private val channel = "photos"
     private val manager get() = getSystemService(NotificationManager::class.java)
 
     override fun onCreate() {
         super.onCreate()
+        running = true
         manager.createNotificationChannel(NotificationChannel(channel, "Photo processing", NotificationManager.IMPORTANCE_LOW))
     }
 
@@ -31,10 +37,10 @@ class PhotoService : Service() {
         startForeground(10, notification("Opening your photo queue…").setOngoing(true).build())
         if (monitor?.isActive != true) monitor = scope.launch {
             try {
+                val files = LocalPhotoFiles(this@PhotoService)
                 while (isActive) {
                     val state = RuntimeGateway.call(this@PhotoService, JSONObject().put("action", "snapshot"))
                     val jobs = state.getJSONArray("jobs")
-                    val files = LocalPhotoFiles(this@PhotoService)
                     for (i in 0 until jobs.length()) {
                         val photo = Photo.fromJson(jobs.getJSONObject(i))
                         if (!files.hasLocalSource(photo) || files.cacheReleased(photo) || photo.status != "ready") continue
@@ -54,7 +60,7 @@ class PhotoService : Service() {
                         manager.notify(11, notification("$fresh photo${if (fresh == 1) " is" else "s are"} finished · open to review replacement").setAutoCancel(true).build())
                     }
                     val pending = state.getInt("pending")
-                    if (pending == 0 || state.getBoolean("paused")) break
+                    if ((pending == 0 && !importActive) || state.getBoolean("paused")) break
                     manager.notify(10, notification("Preparing $pending photo${if (pending == 1) "" else "s"} · works offline").setOngoing(true).build())
                     delay(900)
                 }
@@ -70,7 +76,7 @@ class PhotoService : Service() {
         // Swiping away is an intentional interruption. The SQLite queue remains.
         scope.launch { RuntimeGateway.stop(); stopSelf() }
     }
-    override fun onDestroy() { scope.cancel(); super.onDestroy() }
+    override fun onDestroy() { running = false; scope.cancel(); super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
 }
 

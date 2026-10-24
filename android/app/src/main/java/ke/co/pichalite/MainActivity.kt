@@ -75,14 +75,17 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
     val localFiles = LocalPhotoFiles(app)
     var selectedIds by mutableStateOf(setOf<String>()); private set
     var working by mutableStateOf(false); private set
-    var localVersion by mutableIntStateOf(0); private set
+    internal var localUi by mutableStateOf(LocalQueueUi()); private set
+    private suspend fun refreshLocalUi() {
+        val photos = state.photos
+        localUi = withContext(Dispatchers.IO) { LocalQueueUi.read(photos, localFiles) }
+    }
     val selectedPhotos get() = state.photos.filter { it.status == "ready" && it.id in selectedIds }
     fun select(photo: Photo, selected: Boolean) { selectedIds = if (selected) selectedIds + photo.id else selectedIds - photo.id }
     fun selectAll() { selectedIds = state.photos.filter { it.status == "ready" }.map { it.id }.toSet() }
     fun clearSelection() { selectedIds = emptySet() }
     fun importLocal(result: LocalImports) {
-        localFiles.retainGrants(result)
-        importPhotos(result.uris, local = true)
+        importPhotos(result.uris, local = true, grants = result)
     }
     fun saveToFolder(tree: Uri) = operateSelected("saved") { localFiles.exportToFolder(it, tree) }
     fun saveToGallery() = operateSelected("saved to Gallery") { localFiles.exportToGallery(it) }
@@ -95,9 +98,9 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
         replacementApproval = null
         return request
     }
-    private fun recordReplacementApproval(photos: List<Photo>, request: PendingIntent) {
+    private suspend fun recordReplacementApproval(photos: List<Photo>, request: PendingIntent) {
         approvalPhotos = photos
-        replacementUi.edit().putStringSet("photos", photos.map { it.id }.toSet()).commit()
+        withContext(Dispatchers.IO) { replacementUi.edit().putStringSet("photos", photos.map { it.id }.toSet()).commit() }
         replacementApproval = request
     }
     private suspend fun finishLocalPhotos() {
@@ -107,20 +110,24 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
             val needsPermission = mutableListOf<Photo>()
             var request: PendingIntent? = null
             val foreground = state.pending == 0 && !importing
-            for (photo in state.photos) {
-                if (!localFiles.hasLocalSource(photo) || localFiles.cacheReleased(photo) || photo.status != "ready") continue
-                val approval = withContext(Dispatchers.IO) { localFiles.replaceWhenReady(photo, foreground = foreground) }
-                LocalReplacementRunner.release(context, photo, localFiles)
-                if (approval != null) {
-                    needsPermission += photo
-                    request = approval
-                    if (Build.VERSION.SDK_INT < 30) break
+            val photos = state.photos
+            withContext(Dispatchers.IO) {
+                for (photo in photos) {
+                    if (!localFiles.hasLocalSource(photo) || localFiles.cacheReleased(photo) || photo.status != "ready") continue
+                    val approval = localFiles.replaceWhenReady(photo, foreground = foreground)
+                    LocalReplacementRunner.release(context, photo, localFiles)
+                    if (approval != null) {
+                        needsPermission += photo
+                        request = approval
+                        if (Build.VERSION.SDK_INT < 30) break
+                    }
                 }
             }
-            localVersion++
-            if (request != null) {
-                if (needsPermission.size > 1) request = withContext(Dispatchers.IO) { localFiles.batchReplacementPermission(needsPermission) }
-                recordReplacementApproval(needsPermission, request)
+            refreshLocalUi()
+            val approvalRequest = request
+            if (approvalRequest != null) {
+                val grouped = if (needsPermission.size > 1) withContext(Dispatchers.IO) { localFiles.batchReplacementPermission(needsPermission) } else approvalRequest
+                recordReplacementApproval(needsPermission, grouped)
             }
         } finally { finishingReplacements = false }
     }
@@ -142,7 +149,7 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
             replacementUi.edit().remove("photos").commit()
             approvalPhotos = emptyList()
             replacementApproval = null
-            localVersion++
+            refreshLocalUi()
         } finally { finishingReplacements = false }
     }
     fun retryReplacement(photo: Photo) = viewModelScope.launch {
@@ -154,7 +161,7 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
             if (request != null) {
                 recordReplacementApproval(listOf(photo), request)
             }
-            localVersion++
+            refreshLocalUi()
         } finally { working = false }
     }
     private fun operateSelected(action: String, operation: (Photo) -> Unit) = viewModelScope.launch {
@@ -171,18 +178,20 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
                     if (e is CancellationException) throw e
                     errors += "${photo.name}: ${e.message ?: "Could not complete the operation"}"
                 }
-                localVersion++
+                refreshLocalUi()
             }
             showMessage("$completed of ${photos.size} $action." + if (errors.isEmpty()) "" else " ${errors.first()}", isError = errors.isNotEmpty())
         } finally { working = false }
     }
     fun showMessage(value: String, isError: Boolean = true) { messageIsError = isError; message = value }
-    private fun parse(value: JSONObject) {
-        val jobs = value.getJSONArray("jobs")
-        state = QueueState(true, value.getBoolean("paused"), value.getInt("pending"), value.getLong("saved_bytes"), (0 until jobs.length()).map { i ->
-            val p = jobs.getJSONObject(i)
-            Photo.fromJson(p)
-        }, value.optLong("reclaimed_bytes"), value.optInt("completed"), value.optInt("total"))
+    private suspend fun parse(value: JSONObject) {
+        state = withContext(Dispatchers.Default) {
+            val jobs = value.getJSONArray("jobs")
+            QueueState(true, value.getBoolean("paused"), value.getInt("pending"), value.getLong("saved_bytes"), (0 until jobs.length()).map { i ->
+                val p = jobs.getJSONObject(i)
+                Photo.fromJson(p)
+            }, value.optLong("reclaimed_bytes"), value.optInt("completed"), value.optInt("total"))
+        }
     }
     private suspend fun refreshSnapshot() { parse(RuntimeGateway.call(context, JSONObject().put("action", "snapshot"))) }
     suspend fun refresh() {
@@ -201,19 +210,31 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
         catch (e: Exception) { showMessage(e.message ?: "Could not complete this action") }
     }
     fun startProcessing() {
-        try { ContextCompat.startForegroundService(context, Intent(context, PhotoService::class.java)) }
-        catch (_: IllegalStateException) { showMessage("Photos saved. Reopen PichaLite to continue processing.") }
+        if (PhotoService.running) return
+        try {
+            ContextCompat.startForegroundService(context, Intent(context, PhotoService::class.java))
+            if (message == PROCESSING_WARNING) dismissMessage()
+        } catch (error: IllegalStateException) {
+            android.util.Log.w("PichaLite", "Could not start photo service", error)
+            showMessage(PROCESSING_WARNING)
+        }
+    }
+    private companion object {
+        const val PROCESSING_WARNING = "Photos saved. Reopen PichaLite to continue processing."
     }
 
-    fun importPhotos(uris: List<Uri>, local: Boolean = false) = viewModelScope.launch {
+    fun importPhotos(uris: List<Uri>, local: Boolean = false, grants: LocalImports? = null) = viewModelScope.launch {
         if (importing || uris.isEmpty()) return@launch
         importing = true
+        PhotoService.importActive = true
         importedCount = 0
         importTotal = uris.distinct().size
         dismissMessage()
         var added = 0
         val errors = mutableListOf<String>()
         try {
+            if (!state.paused) startProcessing()
+            withContext(Dispatchers.IO) { if (grants != null) localFiles.retainGrants(grants) }
             // Copy up to two provider streams while the native worker compresses
             // each completed file. Never wait for the rest of the batch or a
             // save/replacement pass before handing the next photo to the queue.
@@ -258,15 +279,14 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
                     RuntimeGateway.call(context, JSONObject().put("action", "enqueue").put("input", input.absolutePath))
                     added++
                     importedCount = added
-                    if (!state.paused) startProcessing()
                 },
                 onFailure = { errors += it.message ?: "A photo could not be imported" },
             )
             refresh()
             if (added > 0 && !state.paused) startProcessing()
             showMessage("$added photo${if (added == 1) "" else "s"} imported." + if (errors.isEmpty()) "" else " ${errors.first()}", isError = errors.isNotEmpty())
-            localVersion++
-        } finally { importing = false }
+            refreshLocalUi()
+        } finally { importing = false; PhotoService.importActive = false }
     }
 }
 
@@ -295,7 +315,12 @@ class MainActivity : ComponentActivity() {
                 model.refresh()
                 if (model.state.pending > 0 && !model.state.paused) model.startProcessing()
                 launchReplacementPermission()
-                while (isActive) { delay(900); model.refresh(); launchReplacementPermission() }
+                while (isActive) {
+                    delay(900)
+                    model.refresh()
+                    if (model.state.pending > 0 && !model.state.paused) model.startProcessing()
+                    launchReplacementPermission()
+                }
             }
         }
     }
@@ -340,7 +365,6 @@ internal val Green = Color(0xFF33684C)
     val state = model.state
     var showExports by remember { mutableStateOf(false) }
     val selected = model.selectedPhotos
-    @Suppress("UNUSED_VARIABLE") val localVersion = model.localVersion
     val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val requestNotifications: () -> Unit = {
         if (Build.VERSION.SDK_INT >= 33) notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -424,9 +448,9 @@ internal val Green = Color(0xFF33684C)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Your photo queue", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                            val waitingForPermission = state.photos.count { !model.localFiles.wasDeleted(it) && model.localFiles.replacementState(it) == "awaiting" }
-                            val needsAttention = state.photos.count { model.localFiles.canRetryReplacement(it) }
-                            val replacing = state.photos.count { it.status == "ready" && model.localFiles.hasLocalSource(it) && !model.localFiles.cacheReleased(it) && !model.localFiles.canRetryReplacement(it) && model.localFiles.replacementState(it) != "not_smaller" && (!model.localFiles.wasDeleted(it) || model.localFiles.hasExport(it)) }
+                            val waitingForPermission = model.localUi.waiting
+                            val needsAttention = model.localUi.attention
+                            val replacing = model.localUi.replacing
                             Text(when {
                                 state.paused -> "Paused · saved safely for later"
                                 state.pending > 0 -> "${state.completed} compressed · ${state.pending} remaining"
@@ -478,8 +502,8 @@ internal val Green = Color(0xFF33684C)
                 onPageChange = { if (tab == 1) readyPage = it else studioPage = it }) { photo ->
                 PhotoRow(photo, state.paused, { onShare(photo) }, { model.retry(photo) },
                     photo.id in model.selectedIds, { model.select(photo, it) }, !model.working,
-                    model.localFiles.replacementStatus(photo),
-                    if (model.localFiles.canRetryReplacement(photo)) ({ model.retryReplacement(photo) }) else null,
+                    model.localUi.photos[photo.id]?.status,
+                    if (model.localUi.photos[photo.id]?.retry == true) ({ model.retryReplacement(photo) }) else null,
                     selectable = tab == 1, open = { previewingId = photo.id })
             }
         }

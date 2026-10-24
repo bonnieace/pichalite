@@ -22,6 +22,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.airbnb.lottie.compose.*
+import kotlinx.coroutines.delay
 
 internal const val PHOTO_PAGE_SIZE = 50
 
@@ -89,31 +90,49 @@ internal fun queueAnimation(importing: Boolean, pending: Int, paused: Boolean): 
 }
 
 @Composable internal fun QueueActivity(importing: Boolean, importedCount: Int, importTotal: Int, pending: Int, paused: Boolean = false) {
-    val stage = queueAnimation(importing, pending, paused)
-    val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(stage.resource))
+    val requested = queueAnimation(importing, pending, paused)
+    var stage by remember { mutableStateOf(requested) }
+    LaunchedEffect(requested, importing, paused) {
+        // A fast worker can empty the queue between provider arrivals. Keep the
+        // combined animation through those gaps rather than restarting Lotties.
+        if (importing && !paused && stage == QueueAnimation.PROCESSING && requested == QueueAnimation.IMPORT) delay(1600)
+        stage = requested
+    }
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color(0xFFF1EFE7))
             .padding(horizontal = 20.dp, vertical = 16.dp).testTag("queue_activity"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // One bundled Lottie at a time, with a dedicated combined-processing state.
-        key(stage) {
-            Box(Modifier.size(144.dp).testTag("queue_animation"), contentAlignment = Alignment.Center) {
-                if (composition == null) Icon(Icons.Outlined.PhotoLibrary, null, tint = Orange, modifier = Modifier.size(44.dp))
-                LottieAnimation(composition, iterations = LottieConstants.IterateForever, modifier = Modifier.fillMaxSize())
-            }
-        }
+        QueueMotion(stage)
         Text(stage.label, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
         Spacer(Modifier.height(6.dp))
         Text(when (stage) {
             QueueAnimation.PROCESSING -> "$importedCount of $importTotal imported · $pending remaining"
             QueueAnimation.IMPORT -> "$importedCount of $importTotal imported"
             QueueAnimation.COMPRESSION -> "$pending photo${if (pending == 1) "" else "s"} remaining"
-        }, color = Muted, fontSize = 12.sp)
+        }, color = Muted, fontSize = 12.sp, lineHeight = 18.sp, minLines = 2, maxLines = 2, textAlign = TextAlign.Center)
         Spacer(Modifier.height(10.dp))
         Text(if (paused) "Compression resumes when you unpause.\nFinished photos are available in Ready."
             else "Each photo starts compressing as soon as it arrives.\nFinished photos are available in Ready.",
             color = Muted, fontSize = 12.sp, textAlign = TextAlign.Center, lineHeight = 18.sp, minLines = 2)
+    }
+}
+
+@Composable private fun QueueMotion(stage: QueueAnimation) {
+    // Warm all three small compositions once; count updates cannot reload them.
+    val upload by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.photo_upload))
+    val compression by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.photo_compression))
+    val processing by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.photo_processing))
+    val composition = when (stage) {
+        QueueAnimation.IMPORT -> upload
+        QueueAnimation.COMPRESSION -> compression
+        QueueAnimation.PROCESSING -> processing
+    }
+    val progress by animateLottieCompositionAsState(composition, iterations = LottieConstants.IterateForever)
+    Box(Modifier.size(144.dp).testTag("queue_animation"), contentAlignment = Alignment.Center) {
+        if (composition == null) Icon(Icons.Outlined.PhotoLibrary, null, tint = Orange, modifier = Modifier.size(44.dp))
+        // Progress is read during drawing, never by the screen or queue layout.
+        LottieAnimation(composition, progress = { progress }, modifier = Modifier.fillMaxSize())
     }
 }
 

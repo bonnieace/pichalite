@@ -151,6 +151,7 @@ class QueuePresentationTest {
         assertEquals(QueueAnimation.PROCESSING, queueAnimation(true, 3, false))
         screenshot("combined-processing")
         compose.runOnIdle { pending = 0 }
+        compose.mainClock.advanceTimeBy(1700)
         compose.onAllNodesWithTag("queue_animation").assertCountEquals(1)
         compose.onNodeWithText("Bringing your photos in").assertIsDisplayed()
         assertEquals(QueueAnimation.IMPORT, queueAnimation(true, 0, false))
@@ -160,6 +161,25 @@ class QueuePresentationTest {
         compose.onNodeWithText("Making room for more").assertIsDisplayed()
         assertEquals(QueueAnimation.COMPRESSION, queueAnimation(false, 3, false))
         screenshot("compressing")
+    }
+
+    @Test fun fiveHundredProgressUpdatesKeepThePanelStillAndIgnoreShortQueueGaps() {
+        compose.mainClock.autoAdvance = false
+        var imported by mutableIntStateOf(0)
+        var pending by mutableIntStateOf(2)
+        compose.setContent { MaterialTheme { QueueActivity(true, imported, 500, pending) } }
+        compose.mainClock.advanceTimeBy(32)
+        val before = compose.onNodeWithTag("queue_activity").fetchSemanticsNode().boundsInRoot
+        for (index in 1..500) {
+            compose.runOnUiThread { imported = index; pending = if (index % 2 == 0) 0 else 2 }
+            compose.mainClock.advanceTimeBy(16)
+        }
+        compose.onNodeWithText("Importing & compressing").assertIsDisplayed()
+        assertEquals(before, compose.onNodeWithTag("queue_activity").fetchSemanticsNode().boundsInRoot)
+        compose.onAllNodesWithTag("queue_animation").assertCountEquals(1)
+        compose.mainClock.advanceTimeBy(1700)
+        compose.onNodeWithText("Bringing your photos in").assertIsDisplayed()
+        screenshot("500-photo-stable-panel")
     }
 
     @Test fun bundledLottiesParseAndDrawOffline() {

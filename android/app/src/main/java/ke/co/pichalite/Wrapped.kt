@@ -257,7 +257,7 @@ internal object WrappedSharing {
     val page = pager.currentPage
     var sharing by remember { mutableStateOf(false) }
     // Freeze a recap on entry so cards and shares agree while another batch runs.
-    val stats = remember(model.state.loaded) { WrappedStats.from(model.state, model.localFiles) }
+    val stats = remember(model.state.loaded) { WrappedStats.from(model.state, model.localUi.replaced, model.localUi.retained) }
     val share: (Int?) -> Unit = { selectedPage ->
         if (!sharing) {
             sharing = true
