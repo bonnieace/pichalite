@@ -265,7 +265,8 @@ class LocalPhotoFilesTest {
         val name = "auto-${UUID.randomUUID()}.png"
         val source = File(context.cacheDir, "test-documents/$name").apply { parentFile!!.mkdirs() }
         val bitmap = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
-        val pixels = IntArray(256 * 256) { i -> 0xff000000.toInt() or ((i * 1103515245 + 12345) and 0xffffff) }
+        val random = java.util.Random(42L)
+        val pixels = IntArray(256 * 256) { 0xff000000.toInt() or random.nextInt(0x1000000) }
         bitmap.setPixels(pixels, 0, 256, 0, 0, 256, 256)
         source.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         bitmap.recycle()
