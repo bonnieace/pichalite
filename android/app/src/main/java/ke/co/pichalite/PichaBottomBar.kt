@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.sp
                             Text(if (ready > 999) "999+" else ready.toString(), fontSize = 9.sp)
                         }
                     }) { Icon(icon, null, tint = if (active) Color.White else Color(0xFFD4D9D4), modifier = Modifier.size(20.dp)) }
-                    Text(label, color = if (active) Color.White else Color(0xFFD4D9D4), fontSize = 11.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium)
+                    Text(label, color = if (active) Color.White else Color(0xFFD4D9D4), fontSize = 11.sp, lineHeight = 12.sp, maxLines = 1, fontWeight = if (active) FontWeight.Bold else FontWeight.Medium)
                 }
             }
         }
