@@ -287,10 +287,16 @@ class LocalPhotoFilesTest {
         val ready = checkNotNull(photo) { "The native worker did not finish" }
         val expected = File(ready.output!!).readBytes()
         try {
+            assertTrue("Canonical native paths must retain the local source", store.hasLocalSource(ready))
+            val preferences = context.getSharedPreferences("local_photo_files", 0)
+            val record = preferences.getString("source:${input.canonicalPath}", null)!!
+            assertTrue(preferences.edit().remove("source:${input.canonicalPath}")
+                .putString("source:${input.absolutePath}", record).commit())
+            assertTrue("Older imports using Android's path alias must remain replaceable", store.hasLocalSource(ready))
             assertTrue(ready.outputBytes!! < ready.inputBytes)
             store.replaceWhenReady(ready)
             LocalReplacementRunner.release(context, ready, store)
-            assertFalse(source.exists())
+            assertFalse(store.replacementStatus(ready), source.exists())
             assertFalse(input.exists())
             assertFalse(File(ready.output!!).exists())
             assertTrue(store.cacheReleased(ready))

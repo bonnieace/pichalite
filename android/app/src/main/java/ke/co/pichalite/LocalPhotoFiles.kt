@@ -63,13 +63,25 @@ class LocalPhotoFiles(
     fun rememberSource(input: File, uri: Uri) {
         check(input.canonicalFile.parentFile == File(RuntimeGateway.root(context), "inbox").canonicalFile)
         val source = JSONObject().put("uri", uri.toString()).put("hash", digest(input))
-        check(prefs.edit().putString("source:${input.absolutePath}", source.toString()).commit()) {
+        check(prefs.edit().putString("source:${input.canonicalPath}", source.toString()).commit()) {
             "Could not retain the original file reference"
         }
     }
 
-    private fun source(photo: Photo) = prefs.getString("source:${photo.input}", null)?.let(::JSONObject)
-    fun wasDeleted(photo: Photo) = prefs.getBoolean("deleted:${photo.input}", false)
+    private fun sourceKey(photo: Photo): String {
+        val canonical = File(photo.input).canonicalPath
+        val key = "source:$canonical"
+        if (prefs.contains(key)) return key
+        val original = "source:${photo.input}"
+        if (prefs.contains(original)) return original
+        // Android's /data/user/0 alias and Rust's canonical /data/data path refer
+        // to the same inbox. Retain access to source records from older imports.
+        return prefs.all.keys.firstOrNull {
+            it.startsWith("source:") && File(it.removePrefix("source:")).canonicalPath == canonical
+        } ?: key
+    }
+    private fun source(photo: Photo) = prefs.getString(sourceKey(photo), null)?.let(::JSONObject)
+    fun wasDeleted(photo: Photo) = prefs.getBoolean("deleted:${sourceKey(photo).removePrefix("source:")}", false)
     fun hasLocalSource(photo: Photo) = source(photo) != null
     fun hasExport(photo: Photo) = prefs.contains("export:${photo.id}")
 
