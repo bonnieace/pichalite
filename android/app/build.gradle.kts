@@ -11,8 +11,8 @@ android {
         applicationId = "ke.co.pichalite"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 4
+        versionName = "0.4.0"
         resValue("string", "app_name", "PichaLite")
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64").filter {
@@ -21,13 +21,21 @@ android {
         }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("${System.getProperty("user.home")}/.android/pichalite-preview04.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
     buildTypes {
         getByName("debug") {
-            // CI debug keys can change between runners. Install this preview beside
-            // 0.1.0 instead of asking users to uninstall and lose their private queue.
-            applicationIdSuffix = ".preview"
+            // Older previews did not retain their signing key. Preserve their data by
+            // installing alongside them; use an explicit cached key for future updates.
+            applicationIdSuffix = ".preview04"
             versionNameSuffix = "-preview"
-            resValue("string", "app_name", "PichaLite Preview")
+            resValue("string", "app_name", "PichaLite 0.4 Preview")
         }
     }
     buildFeatures { compose = true }

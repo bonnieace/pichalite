@@ -34,6 +34,14 @@ class PhotoService : Service() {
                 while (isActive) {
                     val state = RuntimeGateway.call(this@PhotoService, JSONObject().put("action", "snapshot"))
                     val jobs = state.getJSONArray("jobs")
+                    withContext(Dispatchers.IO) {
+                        val files = LocalPhotoFiles(this@PhotoService)
+                        for (i in 0 until jobs.length()) {
+                            val p = jobs.getJSONObject(i)
+                            files.replaceWhenReady(Photo(p.getString("id"), p.getString("name"), p.getString("input"), p.getLong("input_bytes"),
+                                if (p.isNull("output")) null else p.getString("output"), if (p.isNull("output_bytes")) null else p.getLong("output_bytes"), p.getString("status"), null))
+                        }
+                    }
                     val preferences = getSharedPreferences("results", MODE_PRIVATE)
                     var fresh = 0
                     for (i in 0 until jobs.length()) {
@@ -44,7 +52,7 @@ class PhotoService : Service() {
                         }
                     }
                     if (fresh > 0 && (Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(this@PhotoService, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)) {
-                        manager.notify(11, notification("$fresh photo${if (fresh == 1) " is" else "s are"} ready to share").setAutoCancel(true).build())
+                        manager.notify(11, notification("$fresh photo${if (fresh == 1) " is" else "s are"} finished · open to review replacement").setAutoCancel(true).build())
                     }
                     val pending = state.getInt("pending")
                     if (pending == 0 || state.getBoolean("paused")) break

@@ -17,7 +17,7 @@ signing keys are disposable, so no uninstall of the old app is required.
    eligible provider is available and enabled on that device. On older devices
    it falls back to document selection. Alternatively, share from Google Photos
    into PichaLite.
-2. Select up to 30 JPEG, PNG or WebP images. Cloud downloads require internet.
+2. Select JPEG, PNG or WebP images (the platform picker determines its maximum). Cloud downloads require internet.
    PichaLite copies complete bytes into its private inbox before queueing;
    subsequent Rust compression works offline. HEIC is not supported yet.
 3. On a finished result, tap **Save to Google Photos**. Compare both images and
@@ -35,11 +35,24 @@ signing keys are disposable, so no uninstall of the old app is required.
    in Google Photos by its image, filename and size. Keep the verified smaller
    copy; move only the original to Trash yourself if desired.
 
-Sending a smaller copy alone does not free cloud storage. PichaLite never deletes
+Sending a smaller copy alone does not free cloud storage. The Photos / cloud import flow never deletes
 an original, empties Trash, or requests write access to a shared source. Deleting
 through Google Photos can also remove synced device copies and album entries.
 The Android picker does not provide a Google Photos cloud media-item ID, so this
 flow cannot link directly to or automatically identify the original cloud item.
+
+## Batch actions and local files (0.4.0)
+
+**Compress local photos** opens local folder browsing. Local compression now
+saves a verified smaller image to Gallery and deletes the unchanged original
+in one flow. Android may ask for replacement access. Declining keeps the
+original and shows Retry replacement. This local flow does not delete cloud
+originals. See [local compression and replacement](LOCAL_FILES.md).
+
+Finished photos can be selected individually or with **Select all**, then shared
+or sent together to Google Photos. **Export another copy** reveals folder and
+Gallery exports. A Google Photos batch handoff is still not proof of cloud
+backup. Review each copy in Photos.
 
 ## Review persistence and tests
 
