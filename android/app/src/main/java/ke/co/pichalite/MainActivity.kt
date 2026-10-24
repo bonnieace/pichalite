@@ -49,8 +49,15 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
 
-data class Photo(val id: String, val name: String, val input: String, val inputBytes: Long, val output: String?, val outputBytes: Long?, val status: String, val error: String?)
-data class QueueState(val loaded: Boolean = false, val paused: Boolean = false, val pending: Int = 0, val savedBytes: Long = 0, val photos: List<Photo> = emptyList())
+data class Photo(val id: String, val name: String, val input: String, val inputBytes: Long, val output: String?, val outputBytes: Long?, val status: String, val error: String?, val savedUri: String? = null) {
+    val preview: Any get() = savedUri?.let(Uri::parse) ?: File(output ?: input)
+    companion object {
+        fun fromJson(p: JSONObject) = Photo(p.getString("id"), p.getString("name"), p.getString("input"), p.getLong("input_bytes"),
+            if (p.isNull("output")) null else p.getString("output"), if (p.isNull("output_bytes")) null else p.getLong("output_bytes"),
+            p.getString("status"), if (p.isNull("error")) null else p.getString("error"), if (p.isNull("saved_uri")) null else p.getString("saved_uri"))
+    }
+}
+data class QueueState(val loaded: Boolean = false, val paused: Boolean = false, val pending: Int = 0, val savedBytes: Long = 0, val photos: List<Photo> = emptyList(), val reclaimedBytes: Long = 0, val completed: Int = 0, val total: Int = 0)
 
 class PhotoModel(app: Application) : AndroidViewModel(app) {
     var state by mutableStateOf(QueueState()); private set
@@ -93,14 +100,16 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
             var request: PendingIntent? = null
             val foreground = state.pending == 0 && !importing
             for (photo in state.photos) {
+                if (!localFiles.hasLocalSource(photo) || localFiles.cacheReleased(photo) || photo.status != "ready") continue
                 val approval = withContext(Dispatchers.IO) { localFiles.replaceWhenReady(photo, foreground = foreground) }
-                localVersion++
+                LocalReplacementRunner.release(context, photo, localFiles)
                 if (approval != null) {
                     needsPermission += photo
                     request = approval
                     if (Build.VERSION.SDK_INT < 30) break
                 }
             }
+            localVersion++
             if (request != null) {
                 if (needsPermission.size > 1) request = withContext(Dispatchers.IO) { localFiles.batchReplacementPermission(needsPermission) }
                 recordReplacementApproval(needsPermission, request)
@@ -121,6 +130,7 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
                     } else localFiles.declineReplacement(photo)
                 }
             }
+            for (photo in photos) LocalReplacementRunner.release(context, photo, localFiles)
             replacementUi.edit().remove("photos").commit()
             approvalPhotos = emptyList()
             replacementApproval = null
@@ -132,6 +142,7 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
         working = true
         try {
             val request = withContext(Dispatchers.IO) { localFiles.replaceWhenReady(photo, foreground = true, retry = true) }
+            LocalReplacementRunner.release(context, photo, localFiles)
             if (request != null) {
                 recordReplacementApproval(listOf(photo), request)
             }
@@ -176,8 +187,8 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
         val jobs = value.getJSONArray("jobs")
         state = QueueState(true, value.getBoolean("paused"), value.getInt("pending"), value.getLong("saved_bytes"), (0 until jobs.length()).map { i ->
             val p = jobs.getJSONObject(i)
-            Photo(p.getString("id"), p.getString("name"), p.getString("input"), p.getLong("input_bytes"), if (p.isNull("output")) null else p.getString("output"), if (p.isNull("output_bytes")) null else p.getLong("output_bytes"), p.getString("status"), if (p.isNull("error")) null else p.getString("error"))
-        })
+            Photo.fromJson(p)
+        }, value.optLong("reclaimed_bytes"), value.optInt("completed"), value.optInt("total"))
     }
     private suspend fun refreshSnapshot() { parse(RuntimeGateway.call(context, JSONObject().put("action", "snapshot"))) }
     suspend fun refresh() {
@@ -370,7 +381,7 @@ private val Green = Color(0xFF33684C)
     val addPhotos: () -> Unit = {
         picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     }
-    val ready = state.photos.count { it.status == "ready" }
+    val ready = state.completed
     Scaffold(
         containerColor = Paper,
         bottomBar = {
@@ -415,9 +426,9 @@ private val Green = Color(0xFF33684C)
                 item {
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color(0xFFF1EAD9)).padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("SIZE REDUCTION", fontSize = 10.sp, color = Muted, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
-                            Text(bytes(state.savedBytes), fontSize = 31.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
-                            Text("across $ready finished photo${if (ready == 1) "" else "s"}", fontSize = 12.sp, color = Muted)
+                            Text("SPACE RECLAIMED", fontSize = 10.sp, color = Muted, letterSpacing = 1.4.sp, fontWeight = FontWeight.Bold)
+                            Text(bytes(state.reclaimedBytes), fontSize = 31.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp)
+                            Text("${bytes(state.savedBytes)} total compression reduction", fontSize = 12.sp, color = Muted)
                             Text("Local originals are replaced after a verified save", fontSize = 10.sp, color = Muted)
                         }
                         Box(Modifier.size(58.dp).clip(CircleShape).background(Color(0xFFE4D6B5)), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.SouthWest, null, tint = Green, modifier = Modifier.size(32.dp)) }
@@ -427,7 +438,17 @@ private val Green = Color(0xFF33684C)
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Your photo queue", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                            Text(if (state.paused) "Paused · saved safely for later" else if (state.pending > 0) "${state.pending} waiting or processing" else "All caught up", fontSize = 12.sp, color = Muted)
+                            val waitingForPermission = state.photos.count { !model.localFiles.wasDeleted(it) && model.localFiles.replacementState(it) == "awaiting" }
+                            val needsAttention = state.photos.count { model.localFiles.canRetryReplacement(it) }
+                            val replacing = state.photos.count { it.status == "ready" && model.localFiles.hasLocalSource(it) && !model.localFiles.cacheReleased(it) && !model.localFiles.canRetryReplacement(it) && model.localFiles.replacementState(it) != "not_smaller" && (!model.localFiles.wasDeleted(it) || model.localFiles.hasExport(it)) }
+                            Text(when {
+                                state.paused -> "Paused · saved safely for later"
+                                state.pending > 0 -> "${state.completed} compressed · ${state.pending} remaining"
+                                waitingForPermission > 0 -> "Waiting for Android permission for $waitingForPermission photos"
+                                replacing > 0 -> "Saving and replacing $replacing photos…"
+                                needsAttention > 0 -> "$needsAttention originals kept · retry replacement below"
+                                else -> "Finished · totals saved"
+                            }, fontSize = 12.sp, color = Muted)
                         }
                         if (state.pending > 0 || state.paused) TextButton(onClick = { model.togglePause() }) {
                             Icon(if (state.paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause, null, modifier = Modifier.size(18.dp)); Text(if (state.paused) "Resume" else "Pause")
@@ -498,7 +519,7 @@ private val Green = Color(0xFF33684C)
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (photo.status == "ready") Checkbox(checked = selected, onCheckedChange = select, enabled = selectionEnabled)
-            AsyncImage(model = File(photo.output ?: photo.input), contentDescription = photo.name, contentScale = ContentScale.Crop, modifier = Modifier.size(72.dp).clip(RoundedCornerShape(14.dp)).background(Line))
+            AsyncImage(model = photo.preview, contentDescription = photo.name, contentScale = ContentScale.Crop, modifier = Modifier.size(72.dp).clip(RoundedCornerShape(14.dp)).background(Line))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(photo.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
@@ -549,7 +570,7 @@ private val Green = Color(0xFF33684C)
                         Text(if (File(photo.input).exists()) "Original · ${bytes(photo.inputBytes)}" else "Original removed", fontSize = 12.sp)
                     }
                     Column(Modifier.weight(1f)) {
-                        AsyncImage(File(photo.output!!), "Lighter photo preview", contentScale = ContentScale.Fit,
+                        AsyncImage(photo.preview, "Lighter photo preview", contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxWidth().height(130.dp).clip(RoundedCornerShape(12.dp)).background(Line))
                         Text("Lighter · ${bytes(photo.outputBytes ?: 0)}", fontSize = 12.sp, color = Green)
                     }

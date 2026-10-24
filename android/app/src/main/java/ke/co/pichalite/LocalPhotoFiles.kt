@@ -63,15 +63,38 @@ class LocalPhotoFiles(
     fun rememberSource(input: File, uri: Uri) {
         check(input.canonicalFile.parentFile == File(RuntimeGateway.root(context), "inbox").canonicalFile)
         val source = JSONObject().put("uri", uri.toString()).put("hash", digest(input))
-        check(prefs.edit().putString("source:${input.absolutePath}", source.toString()).commit()) {
+        check(prefs.edit().putString("source:${input.canonicalPath}", source.toString()).commit()) {
             "Could not retain the original file reference"
         }
     }
 
-    private fun source(photo: Photo) = prefs.getString("source:${photo.input}", null)?.let(::JSONObject)
-    fun wasDeleted(photo: Photo) = prefs.getBoolean("deleted:${photo.input}", false)
+    private fun sourceKey(photo: Photo): String {
+        val canonical = File(photo.input).canonicalPath
+        val key = "source:$canonical"
+        if (prefs.contains(key)) return key
+        val original = "source:${photo.input}"
+        if (prefs.contains(original)) return original
+        // Android's /data/user/0 alias and Rust's canonical /data/data path refer
+        // to the same inbox. Retain access to source records from older imports.
+        return prefs.all.keys.firstOrNull {
+            it.startsWith("source:") && File(it.removePrefix("source:")).canonicalPath == canonical
+        } ?: key
+    }
+    private fun source(photo: Photo) = prefs.getString(sourceKey(photo), null)?.let(::JSONObject)
+    fun wasDeleted(photo: Photo) = prefs.getBoolean("deleted:${sourceKey(photo).removePrefix("source:")}", false)
     fun hasLocalSource(photo: Photo) = source(photo) != null
     fun hasExport(photo: Photo) = prefs.contains("export:${photo.id}")
+
+    fun savedCopy(photo: Photo): Uri? = prefs.getString("export:${photo.id}", null)?.let { Uri.parse(JSONObject(it).getString("uri")) }
+    fun savedHash(photo: Photo): String? = prefs.getString("export:${photo.id}", null)?.let { JSONObject(it).getString("hash") }
+    fun cacheReleased(photo: Photo) = prefs.getBoolean("released:${photo.id}", false)
+    fun markCacheReleased(photo: Photo) { check(prefs.edit().putBoolean("released:${photo.id}", true).commit()) }
+    fun verifiedSavedCopy(photo: Photo): Uri {
+        check(wasDeleted(photo)) { "The original has not been replaced" }
+        val copy = checkNotNull(savedCopy(photo)) { "The saved copy is missing" }
+        check(digest(copy) == savedHash(photo)) { "The saved copy changed. Private working files were kept." }
+        return copy
+    }
 
     private fun output(photo: Photo): File {
         check(photo.status == "ready") { "Wait for compression to finish" }
@@ -85,27 +108,25 @@ class LocalPhotoFiles(
         return file
     }
 
-    fun exportToFolder(photo: Photo, tree: Uri): Uri {
+    fun exportToFolder(photo: Photo, tree: Uri): Uri = withOutput(photo) { file ->
         try { resolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
         catch (_: SecurityException) { /* Session-only saves are still checked before any cleanup. */ }
-        val file = output(photo)
         val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         val name = photo.name.substringBeforeLast('.').take(100) + "-pichalite.jpg"
         val destination = checkNotNull(DocumentsContract.createDocument(resolver, parent, "image/jpeg", name)) {
             "This folder does not allow saving files"
         }
-        try { writeAndVerify(photo, file, destination); return destination }
+        try { writeAndVerify(photo, file, destination); destination }
         catch (e: Exception) {
             try { DocumentsContract.deleteDocument(resolver, destination) } catch (_: Exception) { }
             throw e
         }
     }
 
-    fun exportToGallery(photo: Photo): Uri {
+    fun exportToGallery(photo: Photo): Uri = withOutput(photo) { file ->
         if (Build.VERSION.SDK_INT < 29) check(context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
             "Allow storage access to save the smaller image. The original is untouched."
         }
-        val file = output(photo)
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, photo.name.substringBeforeLast('.').take(100) + "-pichalite.jpg")
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
@@ -119,11 +140,24 @@ class LocalPhotoFiles(
             copyAndVerify(file, destination)
             if (Build.VERSION.SDK_INT >= 29) check(resolver.update(destination, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null) == 1) { "Could not publish the Gallery copy" }
             recordExport(photo, file, destination)
-            return destination
+            destination
         } catch (e: Exception) {
             try { resolver.delete(destination, null, null) } catch (_: Exception) { }
             throw e
         }
+    }
+
+    private fun withOutput(photo: Photo, operation: (File) -> Uri): Uri {
+        if (photo.savedUri == null) return operation(output(photo))
+        check(savedCopy(photo)?.toString() == photo.savedUri) { "The saved result is no longer available" }
+        val temporary = File.createTempFile("pichalite-export-", ".jpg", context.cacheDir)
+        try {
+            checkNotNull(resolver.openInputStream(Uri.parse(photo.savedUri))).use { input ->
+                temporary.outputStream().use { input.copyTo(it) }
+            }
+            check(digest(temporary) == savedHash(photo)) { "The saved result changed" }
+            return operation(temporary)
+        } finally { temporary.delete() }
     }
 
     private fun writeAndVerify(photo: Photo, file: File, uri: Uri) {
@@ -149,6 +183,7 @@ class LocalPhotoFiles(
     }
 
     private fun recordExport(photo: Photo, file: File, uri: Uri) {
+        if (cacheReleased(photo)) return // Additional exports must retain the primary saved URI.
         val record = JSONObject().put("uri", uri.toString()).put("hash", digest(file))
         check(prefs.edit().putString("export:${photo.id}", record.toString()).commit()) { "Could not record the saved copy" }
     }
@@ -243,10 +278,9 @@ class LocalPhotoFiles(
             .putString("replacement-error:${photo.id}", error).commit()) { "Could not save replacement progress" }
     }
     fun batchReplacementPermission(photos: List<Photo>): PendingIntent = synchronized(replacementLock) {
-        if (Build.VERSION.SDK_INT >= 30) {
-            val uris = photos.map { checkNotNull(mediaUri(verifiedOriginal(it))) { "Could not resolve local replacement access" } }.distinct()
-            MediaStore.createWriteRequest(resolver, uris)
-        } else error("Batch replacement permission requires Android 11 or newer")
+        val uris = photos.map { checkNotNull(mediaUri(verifiedOriginal(it))) { "Could not resolve local replacement access" } }.distinct()
+        if (Build.VERSION.SDK_INT >= 30) MediaStore.createWriteRequest(resolver, uris)
+        else error("Grouped replacement permission requires Android 11 or newer")
     }
 
     fun declineReplacement(photo: Photo) = synchronized(replacementLock) { setReplacementState(photo, "kept") }

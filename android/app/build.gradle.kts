@@ -11,14 +11,9 @@ android {
         applicationId = "ke.co.pichalite"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
+        versionCode = 5
         versionName = "0.4.0"
         resValue("string", "app_name", "PichaLite")
-        ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64").filter {
-                file("src/main/jniLibs/$it/libpichalite.so").isFile
-            }
-        }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
@@ -36,6 +31,14 @@ android {
             applicationIdSuffix = ".preview04"
             versionNameSuffix = "-preview"
             resValue("string", "app_name", "PichaLite 0.4 Preview")
+        }
+    }
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = true
         }
     }
     buildFeatures { compose = true }
