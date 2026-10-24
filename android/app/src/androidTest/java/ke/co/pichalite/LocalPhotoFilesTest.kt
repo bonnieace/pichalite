@@ -260,4 +260,56 @@ class LocalPhotoFilesTest {
             assertTrue(File(second.input).exists())
         }
     }
+    @Test fun localCompressionSavesAndReplacesInOneFlowWithoutExtraWorkingCopies() = runBlocking {
+        RuntimeGateway.call(context, JSONObject().put("action", "pause").put("paused", false))
+        val name = "auto-${UUID.randomUUID()}.png"
+        val source = File(context.cacheDir, "test-documents/$name").apply { parentFile!!.mkdirs() }
+        val bitmap = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
+        val pixels = IntArray(256 * 256) { i -> 0xff000000.toInt() or ((i * 1103515245 + 12345) and 0xffffff) }
+        bitmap.setPixels(pixels, 0, 256, 0, 0, 256, 256)
+        source.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        bitmap.recycle()
+        val uri = DocumentsContract.buildDocumentUri(authority, source.name)
+        context.grantUriPermission(context.packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        val input = File(RuntimeGateway.root(context), "inbox/${UUID.randomUUID()}__$name")
+        source.copyTo(input)
+        val store = LocalPhotoFiles(context, localAuthorities = setOf(authority))
+        store.rememberSource(input, uri)
+        val id = RuntimeGateway.call(context, JSONObject().put("action", "enqueue").put("input", input.absolutePath)).getString("id")
+        var photo: Photo? = null
+        for (attempt in 0 until 100) {
+            val jobs = RuntimeGateway.call(context, JSONObject().put("action", "snapshot")).getJSONArray("jobs")
+            photo = (0 until jobs.length()).map { Photo.fromJson(jobs.getJSONObject(it)) }.find { it.id == id && it.status == "ready" }
+            if (photo != null) break
+            kotlinx.coroutines.delay(100)
+        }
+        val ready = checkNotNull(photo) { "The native worker did not finish" }
+        val expected = File(ready.output!!).readBytes()
+        try {
+            assertTrue(ready.outputBytes!! < ready.inputBytes)
+            store.replaceWhenReady(ready)
+            LocalReplacementRunner.release(context, ready, store)
+            assertFalse(source.exists())
+            assertFalse(input.exists())
+            assertFalse(File(ready.output!!).exists())
+            assertTrue(store.cacheReleased(ready))
+            val snapshot = RuntimeGateway.call(context, JSONObject().put("action", "snapshot"))
+            val jobs = snapshot.getJSONArray("jobs")
+            val saved = (0 until jobs.length()).map { Photo.fromJson(jobs.getJSONObject(it)) }.first { it.id == id }
+            assertEquals("ready", saved.status)
+            assertNotNull(saved.savedUri)
+            context.contentResolver.openInputStream(Uri.parse(saved.savedUri))!!.use { assertArrayEquals(expected, it.readBytes()) }
+            val share = FinishedPhotosSharing.intent(context, listOf(saved))
+            assertEquals(Intent.ACTION_SEND, share.action)
+            val total = snapshot.getLong("reclaimed_bytes")
+            LocalReplacementRunner.release(context, saved, store)
+            assertEquals(total, RuntimeGateway.call(context, JSONObject().put("action", "snapshot")).getLong("reclaimed_bytes"))
+        } finally {
+            store.savedCopy(ready)?.let { context.contentResolver.delete(it, null, null) }
+            source.delete(); input.delete(); File(ready.output!!).delete()
+            RuntimeGateway.stop()
+        }
+    }
+
+
 }

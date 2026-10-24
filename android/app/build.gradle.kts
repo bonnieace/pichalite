@@ -11,8 +11,8 @@ android {
         applicationId = "ke.co.pichalite"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.3.1"
+        versionCode = 5
+        versionName = "0.4.0"
         resValue("string", "app_name", "PichaLite")
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64").filter {
@@ -27,7 +27,15 @@ android {
             // 0.1.0 instead of asking users to uninstall and lose their private queue.
             applicationIdSuffix = ".preview03"
             versionNameSuffix = "-preview"
-            resValue("string", "app_name", "PichaLite 0.3 Preview")
+            resValue("string", "app_name", "PichaLite Preview")
+        }
+    }
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = true
         }
     }
     buildFeatures { compose = true }

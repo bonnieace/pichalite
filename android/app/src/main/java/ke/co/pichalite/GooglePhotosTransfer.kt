@@ -9,11 +9,18 @@ import java.io.File
 /** Handoff and user review, never an assertion from Google that an upload finished. */
 enum class BackupStage { NOT_SENT, SENT, USER_VERIFIED }
 
-class PhotoBackupStore(context: Context, preferenceName: String = "photo_backup_review") {
+class PhotoBackupStore(private val context: Context, preferenceName: String = "photo_backup_review") {
     private val preferences = context.getSharedPreferences(preferenceName, Context.MODE_PRIVATE)
 
     private fun generation(photo: Photo): String? {
         if (photo.status != "ready") return null
+        if (photo.savedUri != null) {
+            val files = LocalPhotoFiles(context)
+            if (files.savedCopy(photo)?.toString() != photo.savedUri) return null
+            try { context.contentResolver.openInputStream(android.net.Uri.parse(photo.savedUri))?.use { if (it.read() < 0) return null } ?: return null }
+            catch (_: Exception) { return null }
+            return "${photo.savedUri}|${photo.outputBytes}|${files.savedHash(photo)}"
+        }
         val output = photo.output?.let(::File) ?: return null
         if (!output.isFile || output.length() <= 0 || output.length() != photo.outputBytes) return null
         // A reprocessed or replaced output must be reviewed again. This is bookkeeping,
@@ -50,14 +57,25 @@ class PhotoBackupStore(context: Context, preferenceName: String = "photo_backup_
 object GooglePhotosSharing {
     const val PACKAGE = "com.google.android.apps.photos"
 
-    fun intent(context: Context, photo: Photo): Intent {
+    fun uri(context: Context, photo: Photo): android.net.Uri {
         check(photo.status == "ready") { "Wait until this photo finishes processing" }
+        if (photo.savedUri != null) {
+            val uri = android.net.Uri.parse(photo.savedUri)
+            check(uri.scheme == "content" && LocalPhotoFiles(context).savedCopy(photo) == uri) { "The saved result is no longer available" }
+            context.contentResolver.openInputStream(uri)?.use { check(it.read() >= 0) { "The saved result is empty" } }
+                ?: error("The saved result is no longer available")
+            return uri
+        }
         val output = File(checkNotNull(photo.output) { "No finished photo is available" })
         val allowed = File(RuntimeGateway.root(context), "output").canonicalFile
         check(output.canonicalFile.parentFile == allowed && output.isFile && output.length() > 0) {
             "The finished photo is no longer available"
         }
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", output)
+        return FileProvider.getUriForFile(context, "${context.packageName}.files", output)
+    }
+
+    fun intent(context: Context, photo: Photo): Intent {
+        val uri = uri(context, photo)
         return Intent(Intent.ACTION_SEND).apply {
             type = "image/jpeg"
             setPackage(PACKAGE)

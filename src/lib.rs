@@ -167,6 +167,7 @@ impl Engine {
         )
         .execute(&pool)
         .await?;
+        sqlx::query("CREATE TABLE IF NOT EXISTS local_exports (photo_id TEXT PRIMARY KEY, destination TEXT NOT NULL, reclaimed_bytes INTEGER NOT NULL DEFAULT 0)").execute(&pool).await?;
         // Only this app owns the database. Recover leased jobs immediately, rather
         // than waiting for a heartbeat timeout after Android kills the process.
         sqlx::query("UPDATE Jobs SET status='Pending', lock_by=NULL, lock_at=NULL WHERE job_type=? AND status IN ('Running','Queued')").bind(QUEUE).execute(&pool).await?;
@@ -285,17 +286,20 @@ impl Engine {
     }
 
     pub async fn snapshot(&self) -> Result<Value, AnyError> {
-        let rows = sqlx::query("SELECT p.*, j.status AS queue_status, j.attempts, j.max_attempts FROM photos p LEFT JOIN Jobs j ON j.job_type=? AND j.idempotency_key=p.id ORDER BY p.created_at DESC,p.rowid DESC LIMIT 500").bind(QUEUE).fetch_all(&self.pool).await?;
+        let rows = sqlx::query("SELECT p.*, j.status AS queue_status, j.attempts, j.max_attempts, e.destination, e.reclaimed_bytes FROM photos p LEFT JOIN Jobs j ON j.job_type=? AND j.idempotency_key=p.id LEFT JOIN local_exports e ON e.photo_id=p.id ORDER BY p.created_at DESC,p.rowid DESC").bind(QUEUE).fetch_all(&self.pool).await?;
         let mut jobs = Vec::new();
         let mut pending = 0;
-        let mut saved = 0;
+        let mut saved = 0_i64;
+        let mut reclaimed = 0_i64;
+        let mut completed = 0_usize;
         let paused = self.paused.load(Ordering::Acquire);
         for row in rows {
             let output: Option<String> = row.try_get("output")?;
             let qs: Option<String> = row.try_get("queue_status")?;
             let attempts: i64 = row.try_get::<Option<i64>, _>("attempts")?.unwrap_or(0);
             let max: i64 = row.try_get::<Option<i64>, _>("max_attempts")?.unwrap_or(3);
-            let ready = output.as_ref().is_some_and(|s| Path::new(s).is_file());
+            let destination: Option<String> = row.try_get("destination")?;
+            let ready = destination.is_some() || output.as_ref().is_some_and(|s| Path::new(s).is_file());
             let failed = qs
                 .as_deref()
                 .is_some_and(|s| s == "Killed" || s == "Failed" && attempts >= max);
@@ -313,12 +317,63 @@ impl Engine {
             }
             let input_bytes: i64 = row.try_get("input_bytes")?;
             let output_bytes: Option<i64> = row.try_get("output_bytes")?;
-            if ready {
-                saved += (input_bytes - output_bytes.unwrap_or(input_bytes)).max(0);
+            // Totals describe all committed completions, never a moving UI window
+            // or the temporary presence of a cache file.
+            if let Some(bytes) = output_bytes {
+                saved += (input_bytes - bytes).max(0);
+                completed += 1;
             }
-            jobs.push(json!({"id":row.try_get::<String,_>("id")?, "name":row.try_get::<String,_>("name")?, "input":row.try_get::<String,_>("input")?, "input_bytes":input_bytes, "output":output, "output_bytes":output_bytes, "width":row.try_get::<Option<i64>,_>("width")?, "height":row.try_get::<Option<i64>,_>("height")?, "status":status, "attempts":attempts, "error":row.try_get::<Option<String>,_>("error")?}));
+            reclaimed += row.try_get::<Option<i64>, _>("reclaimed_bytes")?.unwrap_or(0);
+            jobs.push(json!({"id":row.try_get::<String,_>("id")?, "name":row.try_get::<String,_>("name")?, "input":row.try_get::<String,_>("input")?, "input_bytes":input_bytes, "output":output, "output_bytes":output_bytes, "saved_uri":destination, "width":row.try_get::<Option<i64>,_>("width")?, "height":row.try_get::<Option<i64>,_>("height")?, "status":status, "attempts":attempts, "error":row.try_get::<Option<String>,_>("error")?}));
         }
-        Ok(json!({"ok":true,"paused":paused,"pending":pending,"saved_bytes":saved,"jobs":jobs}))
+        Ok(json!({"ok":true,"paused":paused,"pending":pending,"saved_bytes":saved,"reclaimed_bytes":reclaimed,"completed":completed,"total":jobs.len(),"jobs":jobs}))
+    }
+
+    pub async fn finish_local_export(&self, id: &str, destination: &str) -> Result<(), AnyError> {
+        if !destination.starts_with("content://") || destination.len() > 4096 {
+            return Err("Invalid saved-copy URI".into());
+        }
+        let row = sqlx::query("SELECT input,output,input_bytes,output_bytes FROM photos WHERE id=?")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await?;
+        let input = PathBuf::from(row.try_get::<String, _>("input")?);
+        let output = PathBuf::from(
+            row.try_get::<Option<String>, _>("output")?
+                .ok_or("Photo is not finished")?,
+        );
+        if input.parent() != Some(self.root.join("inbox").as_path())
+            || output.parent() != Some(self.root.join("output").as_path())
+        {
+            return Err("Invalid cache path".into());
+        }
+        let input_bytes: i64 = row.try_get("input_bytes")?;
+        let output_bytes = row
+            .try_get::<Option<i64>, _>("output_bytes")?
+            .ok_or("No finished copy")?;
+        if output_bytes <= 0 || output_bytes >= input_bytes {
+            return Err("The saved copy must be smaller".into());
+        }
+        // Persist the external result before releasing either private cache. A
+        // restart can display/share that URI even after both files are gone.
+        sqlx::query("INSERT INTO local_exports(photo_id,destination) VALUES(?,?) ON CONFLICT(photo_id) DO NOTHING")
+            .bind(id)
+            .bind(destination)
+            .execute(&self.pool)
+            .await?;
+        for path in [input, output] {
+            match fs::remove_file(path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
+        sqlx::query("UPDATE local_exports SET reclaimed_bytes=? WHERE photo_id=?")
+            .bind(input_bytes - output_bytes)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     pub async fn set_paused(&self, paused: bool) -> Result<(), AnyError> {
@@ -343,6 +398,14 @@ impl Engine {
                     )
                     .await?;
                 Ok(json!({"ok":true,"id":id}))
+            }
+            "finish_local_export" => {
+                self.finish_local_export(
+                    request["id"].as_str().ok_or("Missing job ID")?,
+                    request["destination"].as_str().ok_or("Missing saved-copy URI")?,
+                )
+                .await?;
+                Ok(json!({"ok":true}))
             }
             "pause" => {
                 self.set_paused(request["paused"].as_bool().ok_or("Missing paused")?)
@@ -428,12 +491,13 @@ async fn process_photo(job: PhotoJob, data: Data<Arc<Engine>>) -> Result<PhotoRe
         tokio::time::sleep(Duration::from_millis(150)).await;
     }
     // A completed output and its DB record make repeated execution harmless.
-    let row = sqlx::query("SELECT output,output_bytes,width,height FROM photos WHERE id=?")
+    let row = sqlx::query("SELECT p.output,p.output_bytes,p.width,p.height,e.destination FROM photos p LEFT JOIN local_exports e ON e.photo_id=p.id WHERE p.id=?")
         .bind(&job.id)
         .fetch_one(&engine.pool)
         .await?;
+    let exported = row.try_get::<Option<String>, _>("destination")?.is_some();
     if let Some(output) = row.try_get::<Option<String>, _>("output")?
-        && Path::new(&output).is_file()
+        && (exported || Path::new(&output).is_file())
     {
         return Ok(PhotoResult {
             output,
@@ -527,3 +591,4 @@ mod android {
 
 #[cfg(feature = "jni")]
 static JNI_HANDLE: OnceLock<Mutex<Option<tokio::runtime::Handle>>> = OnceLock::new();
+

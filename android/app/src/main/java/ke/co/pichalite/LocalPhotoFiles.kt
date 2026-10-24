@@ -73,6 +73,17 @@ class LocalPhotoFiles(
     fun hasLocalSource(photo: Photo) = source(photo) != null
     fun hasExport(photo: Photo) = prefs.contains("export:${photo.id}")
 
+    fun savedCopy(photo: Photo): Uri? = prefs.getString("export:${photo.id}", null)?.let { Uri.parse(JSONObject(it).getString("uri")) }
+    fun savedHash(photo: Photo): String? = prefs.getString("export:${photo.id}", null)?.let { JSONObject(it).getString("hash") }
+    fun cacheReleased(photo: Photo) = prefs.getBoolean("released:${photo.id}", false)
+    fun markCacheReleased(photo: Photo) { check(prefs.edit().putBoolean("released:${photo.id}", true).commit()) }
+    fun verifiedSavedCopy(photo: Photo): Uri {
+        check(wasDeleted(photo)) { "The original has not been replaced" }
+        val copy = checkNotNull(savedCopy(photo)) { "The saved copy is missing" }
+        check(digest(copy) == savedHash(photo)) { "The saved copy changed. Private working files were kept." }
+        return copy
+    }
+
     private fun output(photo: Photo): File {
         check(photo.status == "ready") { "Wait for compression to finish" }
         val file = File(checkNotNull(photo.output) { "No finished copy is available" }).canonicalFile
