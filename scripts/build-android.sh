@@ -24,13 +24,5 @@ for abi in "$@"; do
     "$toolchain/llvm-strip" --strip-unneeded "android/app/src/main/jniLibs/$abi/libpichalite.so"
 done
 if [[ "${PICHALITE_NATIVE_ONLY:-0}" == 1 ]]; then exit 0; fi
-# Explicit path matches Gradle and CI caching, including Android tools that use XDG paths.
-preview_key="$HOME/.android/pichalite-preview04.keystore"
-if [[ ! -f "$preview_key" ]]; then
-    mkdir -p "$(dirname "$preview_key")"
-    keytool -genkeypair -keystore "$preview_key" -storepass android -keypass android \
-        -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
-        -dname "CN=PichaLite Preview, O=PichaLite, C=KE"
-fi
 cd android
 ./gradlew --no-daemon assembleDebug lintDebug

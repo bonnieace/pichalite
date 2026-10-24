@@ -34,13 +34,12 @@ class PhotoService : Service() {
                 while (isActive) {
                     val state = RuntimeGateway.call(this@PhotoService, JSONObject().put("action", "snapshot"))
                     val jobs = state.getJSONArray("jobs")
-                    withContext(Dispatchers.IO) {
-                        val files = LocalPhotoFiles(this@PhotoService)
-                        for (i in 0 until jobs.length()) {
-                            val p = jobs.getJSONObject(i)
-                            files.replaceWhenReady(Photo(p.getString("id"), p.getString("name"), p.getString("input"), p.getLong("input_bytes"),
-                                if (p.isNull("output")) null else p.getString("output"), if (p.isNull("output_bytes")) null else p.getLong("output_bytes"), p.getString("status"), null))
-                        }
+                    val files = LocalPhotoFiles(this@PhotoService)
+                    for (i in 0 until jobs.length()) {
+                        val photo = Photo.fromJson(jobs.getJSONObject(i))
+                        if (!files.hasLocalSource(photo) || files.cacheReleased(photo) || photo.status != "ready") continue
+                        withContext(Dispatchers.IO) { files.replaceWhenReady(photo) }
+                        LocalReplacementRunner.release(this@PhotoService, photo, files)
                     }
                     val preferences = getSharedPreferences("results", MODE_PRIVATE)
                     var fresh = 0
@@ -74,3 +73,4 @@ class PhotoService : Service() {
     override fun onDestroy() { scope.cancel(); super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
 }
+
