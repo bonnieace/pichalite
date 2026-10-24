@@ -1,3 +1,4 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <files-path name="finished_photos" path="pichalite/output/" />
+    <cache-path name="wrapped_cards" path="wrapped/" />
 </paths>

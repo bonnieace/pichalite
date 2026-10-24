@@ -261,11 +261,11 @@ class LocalPhotoFiles(
     fun replacementState(photo: Photo): String = prefs.getString("replacement:${photo.id}", "") ?: ""
     fun replacementStatus(photo: Photo): String? {
         if (!hasLocalSource(photo)) return null
-        if (wasDeleted(photo)) return "Replaced · smaller image saved"
+        if (wasDeleted(photo)) return "Compressed"
         return when (replacementState(photo)) {
             "awaiting" -> "Smaller image saved · allow replacement in Android’s prompt"
-            "kept" -> "Smaller image saved · original kept (permission declined)"
-            "not_smaller" -> "Already small · original kept"
+            "kept" -> "Retained · replacement permission declined"
+            "not_smaller" -> "Retained"
             "error" -> prefs.getString("replacement-error:${photo.id}", "Could not replace this image")
             else -> if (photo.status == "ready") "Saving smaller image and replacing original…" else "Will save and replace after compression"
         }
