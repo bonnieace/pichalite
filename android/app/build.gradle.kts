@@ -11,14 +11,24 @@ android {
         applicationId = "ke.co.pichalite"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+        resValue("string", "app_name", "PichaLite")
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64").filter {
                 file("src/main/jniLibs/$it/libpichalite.so").isFile
             }
         }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildTypes {
+        getByName("debug") {
+            // CI debug keys can change between runners. Install this preview beside
+            // 0.1.0 instead of asking users to uninstall and lose their private queue.
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-preview"
+            resValue("string", "app_name", "PichaLite Preview")
+        }
     }
     buildFeatures { compose = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
@@ -39,3 +49,4 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
 }
+

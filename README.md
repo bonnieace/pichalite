@@ -6,7 +6,12 @@
 Select photos, or share a batch from Gallery to PichaLite. A Rust worker resizes
 them to a maximum edge of 1600 pixels and encodes JPEG at quality 82. See the
 before/after sizes, pause your queue, and share finished photos to another app.
-Originals remain untouched. There is no account, cloud backend or paid API.
+Originals remain untouched by PichaLite. Compression needs no account or network.
+Version **0.2.0** adds Android's cloud-capable photo picker and a guided handoff
+to the installed Google Photos app. Review the smaller copy, send it, then
+confirm backup yourself before viewing manual original-cleanup guidance.
+There is no automatic cloud deletion or API-level backup verification.
+See [Google Photos workflow and limitations](docs/GOOGLE_PHOTOS.md).
 
 ## Challenge requirements
 
@@ -16,7 +21,7 @@ Originals remain untouched. There is no account, cloud backend or paid API.
 | Desktop first | `cargo run` launches the same app and worker |
 | Android JNI | Rivium exports lifecycle methods; JSON JNI calls import/list/control jobs |
 | Durable jobs | SQLite queue and visible photo row are committed in one transaction |
-| Android feature | Gallery Share Sheet receiver, document picker, progress/results notifications |
+| Android feature | Share Sheet receiver, cloud-capable Photo Picker, Google Photos handoff, progress/results notifications |
 | Submission media | Record the phone walkthrough in `docs/PHONE_TEST.md` before submitting |
 
 ## Run on a laptop
@@ -122,7 +127,8 @@ phone checklist belong in `docs/PHONE_TEST.md`.
 
 ## Scope
 
-This first version focuses on offline batch compression and durable execution.
+This version focuses on local batch compression and durable execution, with
+optional cloud import and Google Photos handoff. Those cloud steps need internet.
 It does not include watermarking, AI processing, automatic cloud sync or a
 permanent Android background daemon. Snapshot history currently returns the
 latest 500 photos. A production version should add history cleanup, broader
@@ -130,13 +136,15 @@ device testing and richer photo controls.
 
 ## Submission
 
-[Draft competition PR #2](https://github.com/apalis-dev/rivium-challenge/pull/2)
+[Competition PR #2](https://github.com/apalis-dev/rivium-challenge/pull/2)
 is open. Each fix is a separate commit on the same `pichalite` contribution
 branch. [CI passed](https://github.com/bonnieace/pichalite/actions/runs/39964221602),
 including the Android JNI queue restart test; see `docs/VALIDATION.md`.
 
-Attach a short video/GIF of the finished flow before marking the PR ready.
-Record physical-phone results before claiming the real-device bonus; an
-emulator does not qualify for that bonus.
+The PR includes a real-phone compression and Share Sheet demo. The 0.2.0 Google
+Photos flow needs a separate real-account phone walkthrough before claiming
+that upload path is verified; see `docs/GOOGLE_PHOTOS.md`. An emulator does not
+qualify for the physical-device bonus.
 
 MIT licensed. See `LICENSE`.
+

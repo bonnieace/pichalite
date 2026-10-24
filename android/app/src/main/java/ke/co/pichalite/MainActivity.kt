@@ -3,6 +3,7 @@ package ke.co.pichalite
 import android.Manifest
 import android.app.Application
 import android.content.ClipData
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -12,6 +13,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.viewModels
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -19,10 +21,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +54,21 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
     var importing by mutableStateOf(false); private set
     var message by mutableStateOf<String?>(null); private set
     private val context get() = getApplication<Application>()
+    private val backups = PhotoBackupStore(app)
+    private var backupVersion by mutableIntStateOf(0)
+    fun backupStage(photo: Photo): BackupStage {
+        @Suppress("UNUSED_VARIABLE") val observedVersion = backupVersion
+        return backups.stage(photo)
+    }
+    fun showMessage(value: String) { message = value }
+    fun recordGooglePhotosHandoff(photo: Photo) = viewModelScope.launch {
+        try { withContext(Dispatchers.IO) { backups.recordHandoff(photo) }; backupVersion++ }
+        catch (e: Exception) { if (e is CancellationException) throw e; message = e.message }
+    }
+    fun confirmGooglePhotosBackup(photo: Photo) = viewModelScope.launch {
+        try { withContext(Dispatchers.IO) { backups.confirmBackup(photo) }; backupVersion++ }
+        catch (e: Exception) { if (e is CancellationException) throw e; message = e.message }
+    }
     private fun parse(value: JSONObject) {
         val jobs = value.getJSONArray("jobs")
         state = QueueState(true, value.getBoolean("paused"), value.getInt("pending"), value.getLong("saved_bytes"), (0 until jobs.length()).map { i ->
@@ -131,7 +150,7 @@ class MainActivity : ComponentActivity() {
     private val model by viewModels<PhotoModel>()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { PichaTheme { PichaScreen(model, ::sharePhoto) } }
+        setContent { PichaTheme { PichaScreen(model, ::sharePhoto, ::sendToGooglePhotos, ::openGooglePhotos) } }
         // A configuration change must not import the same incoming intent twice.
         if (savedInstanceState == null) acceptShare(intent)
         lifecycleScope.launch {
@@ -165,6 +184,24 @@ class MainActivity : ComponentActivity() {
         }
         startActivity(Intent.createChooser(send, "Share your lighter photo"))
     }
+
+    private fun sendToGooglePhotos(photo: Photo) {
+        try {
+            startActivity(GooglePhotosSharing.intent(this, photo))
+            // A successful launch is only a handoff. Cancellation/return is never
+            // interpreted as a completed upload and never enables automatic deletion.
+            model.recordGooglePhotosHandoff(photo)
+        } catch (_: ActivityNotFoundException) {
+            model.showMessage("Google Photos is not available. Install or enable it, or use Share for another app.")
+        } catch (e: Exception) {
+            model.showMessage(e.message ?: "Could not send this photo to Google Photos")
+        }
+    }
+
+    private fun openGooglePhotos() {
+        try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://photos.google.com/"))) }
+        catch (_: ActivityNotFoundException) { model.showMessage("Open Google Photos to check the smaller copy and its backup status.") }
+    }
 }
 
 private val Ink = Color(0xFF202D32)
@@ -178,14 +215,15 @@ private val Green = Color(0xFF33684C)
     MaterialTheme(colorScheme = lightColorScheme(primary = Orange, onPrimary = Color.White, background = Paper, surface = Paper, onSurface = Ink, onBackground = Ink, secondary = Green), content = content)
 }
 
-@Composable private fun PichaScreen(model: PhotoModel, onShare: (Photo) -> Unit) {
+@Composable private fun PichaScreen(model: PhotoModel, onShare: (Photo) -> Unit, onGooglePhotos: (Photo) -> Unit, onOpenGooglePhotos: () -> Unit) {
     var tab by remember { mutableIntStateOf(0) }
+    var reviewingId by rememberSaveable { mutableStateOf<String?>(null) }
     val state = model.state
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { model.importPhotos(it) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(30)) { model.importPhotos(it) }
     val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val addPhotos: () -> Unit = {
         if (Build.VERSION.SDK_INT >= 33) notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-        picker.launch(arrayOf("image/jpeg", "image/png", "image/webp"))
+        picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     }
     val ready = state.photos.count { it.status == "ready" }
     Scaffold(
@@ -204,7 +242,7 @@ private val Green = Color(0xFF33684C)
                         Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(Orange), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.FilterHdr, null, tint = Color.White, modifier = Modifier.size(23.dp)) }
                         Spacer(Modifier.width(9.dp)); Text("picha", fontWeight = FontWeight.ExtraBold, fontSize = 25.sp, letterSpacing = (-1).sp); Text("lite", fontSize = 25.sp, letterSpacing = (-1).sp, color = Orange)
                     }
-                    Text("●  OFFLINE", fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = Green)
+                    Text("●  ON-DEVICE", fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = Green)
                 }
             }
             if (tab == 0) {
@@ -221,6 +259,8 @@ private val Green = Color(0xFF33684C)
                         }
                         Spacer(Modifier.height(10.dp))
                         Text("JPEG, PNG & WebP · Originals stay untouched", fontSize = 11.sp, color = Muted, modifier = Modifier.align(Alignment.CenterHorizontally))
+                        Spacer(Modifier.height(8.dp))
+                        Text("Cloud photos appear when supported by your photo picker. Downloads need internet.", fontSize = 11.sp, color = Muted, lineHeight = 16.sp)
                     }
                 }
                 item {
@@ -249,7 +289,7 @@ private val Green = Color(0xFF33684C)
                     Column {
                         Text("READY WHEN YOU ARE", color = Orange, letterSpacing = 2.sp, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(10.dp)); Text("Good to go.", fontSize = 42.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-1.5).sp)
-                        Spacer(Modifier.height(8.dp)); Text("Your lighter photos, ready for the next share.", color = Muted, fontSize = 14.sp)
+                        Spacer(Modifier.height(8.dp)); Text("Share a lighter copy, or review it before saving to Google Photos.", color = Muted, fontSize = 14.sp)
                     }
                 }
             }
@@ -268,13 +308,19 @@ private val Green = Color(0xFF33684C)
                     Spacer(Modifier.height(7.dp)); Text(if (tab == 0) "Choose photos above, or share them\nto PichaLite from your Gallery." else "Choose a few photos in the Studio\nto get your first batch ready.", color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
                 }
             }
-            items(photos, key = { it.id }) { photo -> PhotoRow(photo, state.paused, { onShare(photo) }, { model.retry(photo) }) }
-            item { Text("ON YOUR PHONE. ALWAYS.\nNo account. No uploads. No internet needed.", color = Muted, fontSize = 10.sp, lineHeight = 17.sp, letterSpacing = 0.5.sp, modifier = Modifier.padding(top = 8.dp)) }
+            items(photos, key = { it.id }) { photo ->
+                PhotoRow(photo, state.paused, { onShare(photo) }, { model.retry(photo) }, { reviewingId = photo.id }, model.backupStage(photo))
+            }
+            item { Text("COMPRESSION STAYS ON YOUR PHONE.\nCloud import and backup need internet. Originals stay untouched by PichaLite.", color = Muted, fontSize = 10.sp, lineHeight = 17.sp, letterSpacing = 0.5.sp, modifier = Modifier.padding(top = 8.dp)) }
         }
+    }
+    state.photos.find { it.id == reviewingId && it.status == "ready" }?.let { photo ->
+        GooglePhotosDialog(photo, model.backupStage(photo), { reviewingId = null },
+            { onGooglePhotos(photo) }, onOpenGooglePhotos, { model.confirmGooglePhotosBackup(photo) })
     }
 }
 
-@Composable private fun PhotoRow(photo: Photo, paused: Boolean, share: () -> Unit, retry: () -> Unit) {
+@Composable private fun PhotoRow(photo: Photo, paused: Boolean, share: () -> Unit, retry: () -> Unit, googlePhotos: () -> Unit, backupStage: BackupStage) {
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(model = File(photo.output ?: photo.input), contentDescription = photo.name, contentScale = ContentScale.Crop, modifier = Modifier.size(72.dp).clip(RoundedCornerShape(14.dp)).background(Line))
@@ -295,9 +341,70 @@ private val Green = Color(0xFF33684C)
                 else -> Icon(Icons.Outlined.Schedule, null, tint = Muted, modifier = Modifier.size(20.dp))
             }
         }
+        if (photo.status == "ready") {
+            TextButton(onClick = googlePhotos, modifier = Modifier.align(Alignment.End)) {
+                Icon(Icons.Outlined.CloudUpload, null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(when (backupStage) {
+                    BackupStage.USER_VERIFIED -> "Backup reviewed · next steps"
+                    BackupStage.SENT -> "Google Photos · check backup"
+                    BackupStage.NOT_SENT -> "Save to Google Photos"
+                }, fontSize = 12.sp)
+            }
+        }
         if (photo.status == "failed" && photo.error != null) Text(photo.error, color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
         HorizontalDivider(Modifier.padding(top = 18.dp), color = Line)
     }
+}
+
+@Composable private fun GooglePhotosDialog(photo: Photo, stage: BackupStage, dismiss: () -> Unit, send: () -> Unit, open: () -> Unit, verify: () -> Unit) {
+    var checkedBackup by remember(photo.id, photo.output, photo.outputBytes, stage) { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text("Back up a lighter copy", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(Modifier.heightIn(max = 510.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(photo.name, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        AsyncImage(File(photo.input), "Original photo preview", contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxWidth().height(130.dp).clip(RoundedCornerShape(12.dp)).background(Line))
+                        Text("Original · ${bytes(photo.inputBytes)}", fontSize = 12.sp)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        AsyncImage(File(photo.output!!), "Lighter photo preview", contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxWidth().height(130.dp).clip(RoundedCornerShape(12.dp)).background(Line))
+                        Text("Lighter · ${bytes(photo.outputBytes ?: 0)}", fontSize = 12.sp, color = Green)
+                    }
+                }
+                if ((photo.outputBytes ?: photo.inputBytes) >= photo.inputBytes) {
+                    Text("This JPEG is not smaller than the original. Keeping the original avoids increasing storage use.", color = Orange)
+                }
+                when (stage) {
+                    BackupStage.NOT_SENT -> Text("Review the quality, then send this smaller copy to Google Photos. Choose the correct account and finish saving it there. Your original stays untouched.")
+                    BackupStage.SENT -> {
+                        Text("The copy was handed to Google Photos. PichaLite cannot tell whether you saved it, cancelled, or finished backing it up.")
+                        Text("Open Google Photos, check the correct account, open the smaller copy and confirm backup has finished.")
+                        Row(Modifier.fillMaxWidth().toggleable(value = checkedBackup, onValueChange = { checkedBackup = it }), verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = checkedBackup, onCheckedChange = null)
+                            Text("I checked the smaller copy and confirmed its cloud backup finished.", fontSize = 13.sp)
+                        }
+                        Button(onClick = verify, enabled = checkedBackup, modifier = Modifier.fillMaxWidth()) { Text("Record my check") }
+                    }
+                    BackupStage.USER_VERIFIED -> {
+                        Text("You marked the smaller copy as backed up. This is your confirmation, not an automatic cloud check.", color = Green)
+                        Text("If you want to remove the original:", fontWeight = FontWeight.Bold)
+                        Text("1. Open Google Photos and identify the original by its image, filename and larger file size.\n2. Keep the verified smaller copy.\n3. Select only the original and move it to Trash yourself.")
+                        Text("Deleting in Google Photos may also remove synced device copies and album entries. PichaLite cannot undo it or remove cloud originals for you.", color = Orange)
+                    }
+                }
+                OutlinedButton(onClick = open, modifier = Modifier.fillMaxWidth()) { Text("Open Google Photos") }
+                Text("Sending a smaller copy alone does not free cloud storage. Original removal is manual.", fontSize = 12.sp, color = Muted)
+            }
+        },
+        confirmButton = { TextButton(onClick = send) { Text(if (stage == BackupStage.NOT_SENT) "Send lighter copy" else "Send again") } },
+        dismissButton = { TextButton(onClick = dismiss) { Text("Close") } }
+    )
 }
 
 private fun bytes(value: Long): String = when {
@@ -305,3 +412,4 @@ private fun bytes(value: Long): String = when {
     value >= 1024 -> String.format(java.util.Locale.US, "%.0f KB", value / 1024.0)
     else -> "$value B"
 }
+
