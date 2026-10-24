@@ -54,7 +54,7 @@ jobs:
       - run: bash scripts/build-android.sh arm64-v8a x86_64
       - uses: actions/upload-artifact@v4
         with:
-          name: PichaLite-0.2.0-preview-APK
+          name: PichaLite-0.3.0-preview-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 3
       - name: Allow emulator acceleration

@@ -11,8 +11,8 @@ android {
         applicationId = "ke.co.pichalite"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
         resValue("string", "app_name", "PichaLite")
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64").filter {

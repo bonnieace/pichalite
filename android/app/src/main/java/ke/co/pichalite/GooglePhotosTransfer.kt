@@ -67,3 +67,24 @@ object GooglePhotosSharing {
         }
     }
 }
+
+/** Explicit URI grants for every finished item, including multi-photo handoffs. */
+object FinishedPhotosSharing {
+    fun intent(context: Context, photos: List<Photo>, targetPackage: String? = null): Intent {
+        check(photos.isNotEmpty()) { "Select at least one finished photo" }
+        val uris = ArrayList(photos.distinctBy { it.id }.map {
+            // Reuse the finished-output boundary checks; never expose the private inbox.
+            @Suppress("DEPRECATION")
+            GooglePhotosSharing.intent(context, it).getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)!!
+        })
+        return Intent(if (uris.size == 1) Intent.ACTION_SEND else Intent.ACTION_SEND_MULTIPLE).apply {
+            type = "image/jpeg"
+            if (targetPackage != null) setPackage(targetPackage)
+            if (uris.size == 1) putExtra(Intent.EXTRA_STREAM, uris.first()) else putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+            clipData = ClipData.newUri(context.contentResolver, "PichaLite lighter copies", uris.first()).apply {
+                uris.drop(1).forEach { addItem(ClipData.Item(it)) }
+            }
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }
+}
