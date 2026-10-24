@@ -36,6 +36,8 @@ class TestDocumentsProvider : DocumentsProvider() {
         return cursor
     }
     override fun queryChildDocuments(parentDocumentId: String, projection: Array<out String>?, sortOrder: String?): Cursor = MatrixCursor(projection ?: arrayOf(Document.COLUMN_DOCUMENT_ID))
+    override fun isChildDocument(parentDocumentId: String, documentId: String): Boolean =
+        parentDocumentId == "root" && documentId != "root" && file(documentId).exists()
     override fun openDocument(documentId: String, mode: String, signal: CancellationSignal?): ParcelFileDescriptor =
         ParcelFileDescriptor.open(file(documentId), ParcelFileDescriptor.parseMode(mode))
     override fun createDocument(parentDocumentId: String, mimeType: String, displayName: String): String {

@@ -41,7 +41,8 @@ class LocalPhotoFilesTest {
         assertTrue(input.length() > output.length())
         val photo = Photo(id, "original.png", input.absolutePath, input.length(), output.absolutePath, output.length(), "ready", null)
         val uri = DocumentsContract.buildDocumentUri(authority, source.name)
-        context.grantUriPermission(context.packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        // Persistable grants are recorded even when the caller also owns this fixture provider.
+        context.grantUriPermission(context.packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         val name = "local-files-$id"
         val store = LocalPhotoFiles(context, name, setOf(authority))
         store.rememberSource(input, uri)
