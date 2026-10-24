@@ -242,6 +242,12 @@ class LocalPhotoFiles(
         check(prefs.edit().putString("replacement:${photo.id}", state)
             .putString("replacement-error:${photo.id}", error).commit()) { "Could not save replacement progress" }
     }
+    fun batchReplacementPermission(photos: List<Photo>): PendingIntent = synchronized(replacementLock) {
+        check(Build.VERSION.SDK_INT >= 30)
+        val uris = photos.map { checkNotNull(mediaUri(verifiedOriginal(it))) { "Could not resolve local replacement access" } }.distinct()
+        MediaStore.createWriteRequest(resolver, uris)
+    }
+
     fun declineReplacement(photo: Photo) = synchronized(replacementLock) { setReplacementState(photo, "kept") }
 
     /** One resumable save/verify/delete flow shared by the service and foreground screen. */
@@ -272,7 +278,7 @@ class LocalPhotoFiles(
                 return@synchronized if (foreground) request else null
             }
         } catch (e: Exception) {
-            setReplacementState(photo, "error", (if (hasExport(photo)) "Smaller image saved · original kept. " else "Original kept · ") +
+            setReplacementState(photo, "error", "Original kept · " +
                 (e.message ?: "Could not complete replacement"))
         }
         null

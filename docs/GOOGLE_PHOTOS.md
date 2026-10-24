@@ -41,17 +41,18 @@ through Google Photos can also remove synced device copies and album entries.
 The Android picker does not provide a Google Photos cloud media-item ID, so this
 flow cannot link directly to or automatically identify the original cloud item.
 
-## Batch actions and local files (0.3.0)
+## Batch actions and local files (0.3.1)
 
-The separate **Local files** button restores local folder browsing. Finished photos
-can be selected individually or with **Select all**, then saved to a folder or
-Gallery, shared together, or sent together to Google Photos. A Google Photos
-batch handoff is still not proof of cloud backup. Review each copy in Photos.
+**Compress local photos** opens local folder browsing. Local compression now
+saves a verified smaller image to Gallery and deletes the unchanged original
+in one flow. Android may ask for replacement access. Declining keeps the
+original and shows Retry replacement. This local flow does not delete cloud
+originals. See [local compression and replacement](LOCAL_FILES.md).
 
-Local-original cleanup is separate from the cloud flow. Only new Local files
-imports retain source references. A verified, smaller copy saved to a local folder
-or Gallery is required before optional, explicitly confirmed local deletion.
-See [Local files and cleanup](LOCAL_FILES.md).
+Finished photos can be selected individually or with **Select all**, then shared
+or sent together to Google Photos. **Export another copy** reveals folder and
+Gallery exports. A Google Photos batch handoff is still not proof of cloud
+backup. Review each copy in Photos.
 
 ## Review persistence and tests
 

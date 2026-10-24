@@ -16,7 +16,8 @@ no separate save prerequisite, cleanup selection or disabled delete button.
 The service performs replacement after compression even if the screen is closed.
 If Android requires permission, it saves progress and asks through the system
 permission prompt when the app is foregrounded. Android 11+ uses a write-access
-request for the exact MediaStore item, then rechecks all bytes before deleting.
+request for the exact MediaStore items (one prompt for a finished batch), then
+rechecks all bytes before deleting.
 Android 10 uses its recoverable permission action. Cancelling keeps both files
 and shows **original kept** with a **Retry replacement** action. Errors also
 show an actionable status instead of a disabled control. Non-smaller outputs

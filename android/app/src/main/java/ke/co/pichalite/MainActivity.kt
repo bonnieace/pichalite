@@ -73,48 +73,67 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
     fun saveToGallery() = operateSelected("saved to Gallery") { localFiles.exportToGallery(it) }
     var replacementApproval: PendingIntent? = null; private set
     private val replacementUi = app.getSharedPreferences("replacement_ui", 0)
-    private var approvalPhoto: Photo? = null
+    private var approvalPhotos: List<Photo> = emptyList()
+    private var finishingReplacements = false
     fun takeReplacementApproval(): PendingIntent? {
         val request = replacementApproval ?: return null
         replacementApproval = null
         return request
     }
+    private fun recordReplacementApproval(photos: List<Photo>, request: PendingIntent) {
+        approvalPhotos = photos
+        replacementUi.edit().putStringSet("photos", photos.map { it.id }.toSet()).commit()
+        replacementApproval = request
+    }
     private suspend fun finishLocalPhotos() {
-        if (approvalPhoto != null) return
-        for (photo in state.photos) {
-            val approval = withContext(Dispatchers.IO) { localFiles.replaceWhenReady(photo, foreground = true) }
-            localVersion++
-            if (approval != null) {
-                approvalPhoto = photo
-                replacementUi.edit().putString("photo", photo.id).commit()
-                replacementApproval = approval
-                break
+        if (approvalPhotos.isNotEmpty() || finishingReplacements) return
+        finishingReplacements = true
+        try {
+            val needsPermission = mutableListOf<Photo>()
+            var request: PendingIntent? = null
+            val foreground = state.pending == 0 && !importing
+            for (photo in state.photos) {
+                val approval = withContext(Dispatchers.IO) { localFiles.replaceWhenReady(photo, foreground = foreground) }
+                localVersion++
+                if (approval != null) {
+                    needsPermission += photo
+                    request = approval
+                    if (Build.VERSION.SDK_INT < 30) break
+                }
             }
-        }
+            if (request != null) {
+                if (needsPermission.size > 1) request = withContext(Dispatchers.IO) { localFiles.batchReplacementPermission(needsPermission) }
+                recordReplacementApproval(needsPermission, request)
+            }
+        } finally { finishingReplacements = false }
     }
     fun completeReplacementApproval(approved: Boolean) = viewModelScope.launch {
         // Android may deliver the result to a recreated Activity before its first snapshot.
-        if (!state.loaded) refreshSnapshot()
-        val photo = approvalPhoto ?: state.photos.find { it.id == replacementUi.getString("photo", null) }
-        if (photo != null) withContext(Dispatchers.IO) {
-            if (approved) localFiles.replaceWhenReady(photo, foreground = true, retry = true).let {
-                if (it != null) localFiles.declineReplacement(photo)
-            } else localFiles.declineReplacement(photo)
-        }
-        replacementUi.edit().remove("photo").commit()
-        approvalPhoto = null
-        replacementApproval = null
-        localVersion++
+        finishingReplacements = true
+        try {
+            if (!state.loaded) refreshSnapshot()
+            val ids = replacementUi.getStringSet("photos", emptySet()) ?: emptySet()
+            val photos = approvalPhotos.ifEmpty { state.photos.filter { it.id in ids } }
+            withContext(Dispatchers.IO) {
+                for (photo in photos) {
+                    if (approved) localFiles.replaceWhenReady(photo, foreground = true, retry = true).let {
+                        if (it != null) localFiles.declineReplacement(photo)
+                    } else localFiles.declineReplacement(photo)
+                }
+            }
+            replacementUi.edit().remove("photos").commit()
+            approvalPhotos = emptyList()
+            replacementApproval = null
+            localVersion++
+        } finally { finishingReplacements = false }
     }
     fun retryReplacement(photo: Photo) = viewModelScope.launch {
-        if (approvalPhoto != null || working) return@launch
+        if (approvalPhotos.isNotEmpty() || working || finishingReplacements) return@launch
         working = true
         try {
             val request = withContext(Dispatchers.IO) { localFiles.replaceWhenReady(photo, foreground = true, retry = true) }
             if (request != null) {
-                approvalPhoto = photo
-                replacementUi.edit().putString("photo", photo.id).commit()
-                replacementApproval = request
+                recordReplacementApproval(listOf(photo), request)
             }
             localVersion++
         } finally { working = false }
@@ -497,7 +516,7 @@ private val Green = Color(0xFF33684C)
                 else -> Icon(Icons.Outlined.Schedule, null, tint = Muted, modifier = Modifier.size(20.dp))
             }
         }
-        if (localStatus != null) Text(localStatus, fontSize = 11.sp, color = Green, modifier = Modifier.padding(top = 6.dp))
+        if (localStatus != null) Text(localStatus, fontSize = 11.sp, color = if (retryReplacement != null) Orange else Green, modifier = Modifier.padding(top = 6.dp))
         if (retryReplacement != null) TextButton(onClick = retryReplacement, enabled = selectionEnabled) { Text("Retry replacement") }
         if (photo.status == "ready") {
             TextButton(onClick = googlePhotos, modifier = Modifier.align(Alignment.End)) {
