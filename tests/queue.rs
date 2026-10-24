@@ -60,7 +60,6 @@ fn image_job_resizes_flattens_alpha_and_reuses_one_output() {
     assert!(!temp.path().join("same-job.jpg.part").exists());
 }
 
-
 #[tokio::test]
 async fn totals_cover_more_than_500_results_and_survive_cache_changes_and_restart() {
     let temp = tempfile::tempdir().unwrap();
@@ -108,7 +107,12 @@ async fn verified_local_export_releases_caches_and_counts_reclaimed_bytes_once()
     std::fs::write(&input, [1_u8; 120]).unwrap();
     std::fs::write(&output, [2_u8; 40]).unwrap();
     let id = engine.enqueue(&input, 1600, 82).await.unwrap();
-    assert!(engine.finish_local_export(&id, "file:///wrong").await.is_err());
+    assert!(
+        engine
+            .finish_local_export(&id, "file:///wrong")
+            .await
+            .is_err()
+    );
     assert!(input.exists() && output.exists());
     sqlx::query("UPDATE photos SET output=?,output_bytes=40,width=1,height=1 WHERE id=?")
         .bind(output.to_str().unwrap())

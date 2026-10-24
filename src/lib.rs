@@ -299,7 +299,8 @@ impl Engine {
             let attempts: i64 = row.try_get::<Option<i64>, _>("attempts")?.unwrap_or(0);
             let max: i64 = row.try_get::<Option<i64>, _>("max_attempts")?.unwrap_or(3);
             let destination: Option<String> = row.try_get("destination")?;
-            let ready = destination.is_some() || output.as_ref().is_some_and(|s| Path::new(s).is_file());
+            let ready =
+                destination.is_some() || output.as_ref().is_some_and(|s| Path::new(s).is_file());
             let failed = qs
                 .as_deref()
                 .is_some_and(|s| s == "Killed" || s == "Failed" && attempts >= max);
@@ -323,20 +324,25 @@ impl Engine {
                 saved += (input_bytes - bytes).max(0);
                 completed += 1;
             }
-            reclaimed += row.try_get::<Option<i64>, _>("reclaimed_bytes")?.unwrap_or(0);
+            reclaimed += row
+                .try_get::<Option<i64>, _>("reclaimed_bytes")?
+                .unwrap_or(0);
             jobs.push(json!({"id":row.try_get::<String,_>("id")?, "name":row.try_get::<String,_>("name")?, "input":row.try_get::<String,_>("input")?, "input_bytes":input_bytes, "output":output, "output_bytes":output_bytes, "saved_uri":destination, "width":row.try_get::<Option<i64>,_>("width")?, "height":row.try_get::<Option<i64>,_>("height")?, "status":status, "attempts":attempts, "error":row.try_get::<Option<String>,_>("error")?}));
         }
-        Ok(json!({"ok":true,"paused":paused,"pending":pending,"saved_bytes":saved,"reclaimed_bytes":reclaimed,"completed":completed,"total":jobs.len(),"jobs":jobs}))
+        Ok(
+            json!({"ok":true,"paused":paused,"pending":pending,"saved_bytes":saved,"reclaimed_bytes":reclaimed,"completed":completed,"total":jobs.len(),"jobs":jobs}),
+        )
     }
 
     pub async fn finish_local_export(&self, id: &str, destination: &str) -> Result<(), AnyError> {
         if !destination.starts_with("content://") || destination.len() > 4096 {
             return Err("Invalid saved-copy URI".into());
         }
-        let row = sqlx::query("SELECT input,output,input_bytes,output_bytes FROM photos WHERE id=?")
-            .bind(id)
-            .fetch_one(&self.pool)
-            .await?;
+        let row =
+            sqlx::query("SELECT input,output,input_bytes,output_bytes FROM photos WHERE id=?")
+                .bind(id)
+                .fetch_one(&self.pool)
+                .await?;
         let input = PathBuf::from(row.try_get::<String, _>("input")?);
         let output = PathBuf::from(
             row.try_get::<Option<String>, _>("output")?
@@ -402,7 +408,9 @@ impl Engine {
             "finish_local_export" => {
                 self.finish_local_export(
                     request["id"].as_str().ok_or("Missing job ID")?,
-                    request["destination"].as_str().ok_or("Missing saved-copy URI")?,
+                    request["destination"]
+                        .as_str()
+                        .ok_or("Missing saved-copy URI")?,
                 )
                 .await?;
                 Ok(json!({"ok":true}))
@@ -591,4 +599,3 @@ mod android {
 
 #[cfg(feature = "jni")]
 static JNI_HANDLE: OnceLock<Mutex<Option<tokio::runtime::Handle>>> = OnceLock::new();
-

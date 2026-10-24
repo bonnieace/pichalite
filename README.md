@@ -13,7 +13,7 @@ Version **0.2.0** adds Android's cloud-capable photo picker and a guided handoff
 to the installed Google Photos app. Review the smaller copy, send it, then
 confirm backup yourself before viewing manual original-cleanup guidance.
 There is no automatic cloud deletion or API-level backup verification.
-Version **0.3.1** makes **Compress local photos** the primary save-and-replace
+Version **0.4.0** makes **Compress local photos** the primary save-and-replace
 flow, retaining the 0.3 local picker, removal of the 30-photo truncation,
 finished-photo selection, batch exports, sharing and Google Photos handoff.
 See [local files and cleanup](docs/LOCAL_FILES.md) and
@@ -158,7 +158,7 @@ qualify for the physical-device bonus.
 MIT licensed. See `LICENSE`.
 
 
-### Local replacement in preview 0.3.1
+### Local replacement in preview 0.4.0
 
 Choose **Compress local photos** to compress, automatically save the smaller
 image to Gallery, and delete its verified unchanged original in one flow. Allow

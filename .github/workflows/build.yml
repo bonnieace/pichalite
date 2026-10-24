@@ -57,8 +57,14 @@ jobs:
       - name: Keep preview signing consistent between builds
         uses: actions/cache@v4
         with:
-          path: ~/.android/debug.keystore
-          key: pichalite-preview03-debug-signing-v1
+          path: ~/.android/pichalite-preview04.keystore
+          key: pichalite-preview04-debug-signing-v1
+      - name: Ensure explicit preview signing key exists
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/pichalite-preview04.keystore" ]; then
+            keytool -genkeypair -keystore "$HOME/.android/pichalite-preview04.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=PichaLite Preview, O=PichaLite, C=KE"
+          fi
       - uses: gradle/actions/setup-gradle@v4
       - run: bash scripts/build-android.sh arm64-v8a x86_64
       - uses: actions/upload-artifact@v4
@@ -80,7 +86,7 @@ jobs:
             ./gradlew --no-daemon connectedDebugAndroidTest || { adb logcat -d -t 500; exit 1; }
             mkdir -p app/build/reports/ui
             adb install -r app/build/outputs/apk/debug/app-x86_64-debug.apk
-            adb shell am start -n ke.co.pichalite.preview03/ke.co.pichalite.MainActivity
+            adb shell am start -n ke.co.pichalite.preview04/ke.co.pichalite.MainActivity
             sleep 3
             adb exec-out screencap -p > app/build/reports/ui/studio.png
       - name: Android instrumentation reports

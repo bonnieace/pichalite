@@ -21,13 +21,21 @@ android {
         }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("${System.getProperty("user.home")}/.android/pichalite-preview04.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
     buildTypes {
         getByName("debug") {
-            // CI debug keys can change between runners. Install this preview beside
-            // 0.1.0 instead of asking users to uninstall and lose their private queue.
-            applicationIdSuffix = ".preview03"
+            // Older previews did not retain their signing key. Preserve their data by
+            // installing alongside them; use an explicit cached key for future updates.
+            applicationIdSuffix = ".preview04"
             versionNameSuffix = "-preview"
-            resValue("string", "app_name", "PichaLite Preview")
+            resValue("string", "app_name", "PichaLite 0.4 Preview")
         }
     }
     splits {
