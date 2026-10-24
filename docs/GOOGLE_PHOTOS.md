@@ -62,6 +62,9 @@ Before claiming real Google Photos compatibility, test on a physical phone:
 - Test without Google Photos installed: show an error and retain the source.
 - Check both cloud copies remain until the user manually removes one.
 
+All six Android instrumentation tests (five backup tests plus the native queue
+test), Android lint, native builds and Rust checks passed in
+https://github.com/bonnieace/pichalite/actions/runs/40078425569.
 No real-account upload or deletion is performed by automated tests.
 
 ## References

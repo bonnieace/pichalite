@@ -138,8 +138,9 @@ device testing and richer photo controls.
 
 [Competition PR #2](https://github.com/apalis-dev/rivium-challenge/pull/2)
 is open. Each fix is a separate commit on the same `pichalite` contribution
-branch. [CI passed](https://github.com/bonnieace/pichalite/actions/runs/39964221602),
-including the Android JNI queue restart test; see `docs/VALIDATION.md`.
+branch. [CI passed](https://github.com/bonnieace/pichalite/actions/runs/40078425569),
+including six Android instrumentation tests for JNI queue restart and backup
+review/file handoff; see `docs/VALIDATION.md`.
 
 The PR includes a real-phone compression and Share Sheet demo. The 0.2.0 Google
 Photos flow needs a separate real-account phone walkthrough before claiming
