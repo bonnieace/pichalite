@@ -54,6 +54,11 @@ jobs:
           packages: 'platform-tools'
           log-accepted-android-sdk-licenses: false
       - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018'
+      - name: Keep preview signing consistent between builds
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: pichalite-preview03-debug-signing-v1
       - run: bash scripts/build-android.sh arm64-v8a x86_64
       - uses: actions/upload-artifact@v4
         with:
@@ -73,6 +78,7 @@ jobs:
           script: |
             ./gradlew --no-daemon connectedDebugAndroidTest || { adb logcat -d -t 500; exit 1; }
             mkdir -p app/build/reports/ui
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell am start -n ke.co.pichalite.preview03/ke.co.pichalite.MainActivity
             sleep 3
             adb exec-out screencap -p > app/build/reports/ui/studio.png

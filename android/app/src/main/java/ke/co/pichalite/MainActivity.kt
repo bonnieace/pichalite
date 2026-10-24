@@ -479,7 +479,7 @@ private val Green = Color(0xFF33684C)
                     Text("This JPEG is not smaller than the original. Keeping the original avoids increasing storage use.", color = Orange)
                 }
                 when (stage) {
-                    BackupStage.NOT_SENT -> Text("Review the quality, then send this smaller copy to Google Photos. Choose the correct account and finish saving it there. Your original stays untouched.")
+                    BackupStage.NOT_SENT -> Text("Review the quality, then send this smaller copy to Google Photos. Choose the correct account and finish saving it there. Sending does not delete any original.")
                     BackupStage.SENT -> {
                         Text("The copy was handed to Google Photos. PichaLite cannot tell whether you saved it, cancelled, or finished backing it up.")
                         Text("Open Google Photos, check the correct account, open the smaller copy and confirm backup has finished.")
