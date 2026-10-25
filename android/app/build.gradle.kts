@@ -21,6 +21,13 @@ android {
         }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    buildFeatures { buildConfig = true; compose = true }
+    defaultConfig {
+        val phKey = (project.findProperty("posthogKey") as String? ?: "")
+        val phHost = (project.findProperty("posthogHost") as String? ?: "https://us.i.posthog.com")
+        buildConfigField("String", "POSTHOG_KEY", "\""+phKey.replace("\"","")+"\"")
+        buildConfigField("String", "POSTHOG_HOST", "\""+phHost.replace("\"","")+"\"")
+    }
     buildTypes {
         getByName("debug") {
             // CI debug keys can change between runners. Install this preview beside
@@ -30,7 +37,6 @@ android {
             resValue("string", "app_name", "PichaLite Preview")
         }
     }
-    buildFeatures { compose = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     packaging { jniLibs { useLegacyPackaging = false } }
@@ -45,6 +51,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("com.posthog:posthog-android:3.56.7")
     debugImplementation("androidx.compose.ui:ui-tooling")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
