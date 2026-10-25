@@ -285,6 +285,7 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
                 },
                 onFailure = { errors += it.message ?: "A photo could not be imported" },
             )
+            PichaAnalytics.capture("photos_imported", mapOf("requested_count" to uris.distinct().size, "imported_count" to added, "failed_count" to errors.size))
             refresh()
             if (added > 0 && !state.paused) startProcessing()
             showMessage("$added photo${if (added == 1) "" else "s"} imported." + if (errors.isEmpty()) "" else " ${errors.first()}", isError = errors.isNotEmpty())
@@ -341,7 +342,10 @@ class MainActivity : ComponentActivity() {
     }
     private fun sharePhoto(photo: Photo) = sharePhotos(listOf(photo))
     private fun sharePhotos(photos: List<Photo>) {
-        try { startActivity(FinishedPhotosSharing.chooser(this, photos)) }
+        try {
+            startActivity(FinishedPhotosSharing.chooser(this, photos))
+            PichaAnalytics.capture("photo_share_opened", mapOf("photo_count" to photos.size))
+        }
         catch (e: Exception) { model.showMessage(e.message ?: "Could not share these photos") }
     }
 
