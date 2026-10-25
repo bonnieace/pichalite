@@ -11,8 +11,8 @@ android {
         applicationId = "ke.co.pichalite"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.5.5"
+        versionCode = 13
+        versionName = "0.5.6"
         resValue("string", "app_name", "PichaLite")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         val phKey = (project.findProperty("posthogKey") as String? ?: "phc_oCNG8evd4Z9VDSD7vCkog8pNLtpkEyZHJQ3BXY7dFpcz")

@@ -6,7 +6,7 @@ import com.posthog.PostHog
 import com.posthog.android.PostHogAndroid
 import com.posthog.android.PostHogAndroidConfig
 
-/** Anonymous, opt-in event capture. Never submit photo content, paths, names or exception messages. */
+/** Anonymous event capture with a persistent opt-out. Never submit photo content, paths, names or exception messages. */
 object PichaAnalytics {
     private const val PREFS = "privacy"
     private const val CONSENT = "analytics_enabled"
@@ -15,7 +15,7 @@ object PichaAnalytics {
 
     fun enabled(context: Context): Boolean =
         BuildConfig.POSTHOG_KEY.isNotBlank() &&
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(CONSENT, false)
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(CONSENT, true)
 
     fun initialize(app: Application) {
         if (BuildConfig.POSTHOG_KEY.isBlank()) return
@@ -25,7 +25,7 @@ object PichaAnalytics {
             host = BuildConfig.POSTHOG_HOST
         ).apply {
             optOut = !enabled
-            captureApplicationLifecycleEvents = false
+            captureApplicationLifecycleEvents = true
             captureScreenViews = false
             captureDeepLinks = false
             sessionReplay = false
