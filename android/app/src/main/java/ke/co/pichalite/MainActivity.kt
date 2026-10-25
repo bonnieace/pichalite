@@ -28,6 +28,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -139,6 +140,7 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
                 } catch (e: Exception) { if (e is CancellationException) throw e; errors += e.message ?: "A photo could not be imported" }
             }
             if (uris.size > 30) errors += "Choose up to 30 photos at a time"
+            PichaAnalytics.capture("photos_imported", mapOf("requested_count" to uris.size, "imported_count" to added, "failed_count" to errors.size))
             refresh()
             if (added > 0 && !state.paused) startProcessing()
             if (errors.isNotEmpty()) message = "$added imported. ${errors.first()}"
@@ -183,6 +185,7 @@ class MainActivity : ComponentActivity() {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         startActivity(Intent.createChooser(send, "Share your lighter photo"))
+        PichaAnalytics.capture("photo_share_opened")
     }
 
     private fun sendToGooglePhotos(photo: Photo) {
@@ -191,6 +194,7 @@ class MainActivity : ComponentActivity() {
             // A successful launch is only a handoff. Cancellation/return is never
             // interpreted as a completed upload and never enables automatic deletion.
             model.recordGooglePhotosHandoff(photo)
+            PichaAnalytics.capture("google_photos_handoff_opened")
         } catch (_: ActivityNotFoundException) {
             model.showMessage("Google Photos is not available. Install or enable it, or use Share for another app.")
         } catch (e: Exception) {
@@ -219,6 +223,8 @@ private val Green = Color(0xFF33684C)
     var tab by remember { mutableIntStateOf(0) }
     var reviewingId by rememberSaveable { mutableStateOf<String?>(null) }
     val state = model.state
+    val context = LocalContext.current
+    var analyticsConsent by remember { mutableStateOf(PichaAnalytics.enabled(context)) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(30)) { model.importPhotos(it) }
     val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val addPhotos: () -> Unit = {
@@ -310,6 +316,20 @@ private val Green = Color(0xFF33684C)
             }
             items(photos, key = { it.id }) { photo ->
                 PhotoRow(photo, state.paused, { onShare(photo) }, { model.retry(photo) }, { reviewingId = photo.id }, model.backupStage(photo))
+            }
+            item {
+                if (BuildConfig.POSTHOG_KEY.isNotBlank()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Anonymous usage analytics", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text("Optional. Never sends photos, filenames or paths.", color = Muted, fontSize = 11.sp)
+                        }
+                        Switch(checked = analyticsConsent, onCheckedChange = {
+                            PichaAnalytics.setConsent(context, it)
+                            analyticsConsent = it
+                        })
+                    }
+                }
             }
             item { Text("COMPRESSION STAYS ON YOUR PHONE.\nCloud import and backup need internet. Originals stay untouched by PichaLite.", color = Muted, fontSize = 10.sp, lineHeight = 17.sp, letterSpacing = 0.5.sp, modifier = Modifier.padding(top = 8.dp)) }
         }
