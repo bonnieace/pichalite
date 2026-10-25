@@ -32,6 +32,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -285,6 +286,7 @@ class PhotoModel(app: Application) : AndroidViewModel(app) {
                 },
                 onFailure = { errors += it.message ?: "A photo could not be imported" },
             )
+            PichaAnalytics.capture("photos_imported", mapOf("requested_count" to uris.distinct().size, "imported_count" to added, "failed_count" to errors.size))
             refresh()
             if (added > 0 && !state.paused) startProcessing()
             showMessage("$added photo${if (added == 1) "" else "s"} imported." + if (errors.isEmpty()) "" else " ${errors.first()}", isError = errors.isNotEmpty())
@@ -341,7 +343,10 @@ class MainActivity : ComponentActivity() {
     }
     private fun sharePhoto(photo: Photo) = sharePhotos(listOf(photo))
     private fun sharePhotos(photos: List<Photo>) {
-        try { startActivity(FinishedPhotosSharing.chooser(this, photos)) }
+        try {
+            startActivity(FinishedPhotosSharing.chooser(this, photos))
+            PichaAnalytics.capture("photo_share_opened", mapOf("photo_count" to photos.size))
+        }
         catch (e: Exception) { model.showMessage(e.message ?: "Could not share these photos") }
     }
 
@@ -363,6 +368,8 @@ internal val Green = Color(0xFF33684C)
     var previewingId by rememberSaveable { mutableStateOf<String?>(null) }
     var studioPage by rememberSaveable { mutableIntStateOf(0) }
     var readyPage by rememberSaveable { mutableIntStateOf(0) }
+    val context = LocalContext.current
+    var analyticsConsent by remember { mutableStateOf(PichaAnalytics.enabled(context)) }
     val studioList = rememberLazyListState()
     val readyList = rememberLazyListState()
     val state = model.state
@@ -495,6 +502,18 @@ internal val Green = Color(0xFF33684C)
                         }
                         if (model.working) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("Working on selected photos…", fontSize = 12.sp) }
                     }
+                }
+            }
+            if (tab == 0 && BuildConfig.POSTHOG_KEY.isNotBlank()) item(key = "analytics-consent") {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Anonymous usage analytics", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        Text("Optional. Never sends photos, filenames or paths.", color = Muted, fontSize = 11.sp)
+                    }
+                    Switch(checked = analyticsConsent, onCheckedChange = {
+                        PichaAnalytics.setConsent(context, it)
+                        analyticsConsent = PichaAnalytics.enabled(context)
+                    })
                 }
             }
             if (model.message != null) item(key = "notice") {

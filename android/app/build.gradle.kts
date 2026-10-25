@@ -11,10 +11,14 @@ android {
         applicationId = "ke.co.pichalite"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.5.4"
+        versionCode = 12
+        versionName = "0.5.5"
         resValue("string", "app_name", "PichaLite")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        val phKey = (project.findProperty("posthogKey") as String? ?: "phc_oCNG8evd4Z9VDSD7vCkog8pNLtpkEyZHJQ3BXY7dFpcz")
+        val phHost = (project.findProperty("posthogHost") as String? ?: "https://us.i.posthog.com")
+        buildConfigField("String", "POSTHOG_KEY", "\"" + phKey.replace("\"", "") + "\"")
+        buildConfigField("String", "POSTHOG_HOST", "\"" + phHost.replace("\"", "") + "\"")
     }
     signingConfigs {
         getByName("debug") {
@@ -41,7 +45,7 @@ android {
             isUniversalApk = true
         }
     }
-    buildFeatures { compose = true }
+    buildFeatures { buildConfig = true; compose = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
     packaging {
@@ -64,6 +68,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("com.airbnb.android:lottie-compose:6.7.1")
+    implementation("com.posthog:posthog-android:3.72.5")
     debugImplementation("androidx.compose.ui:ui-tooling")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
