@@ -23,7 +23,7 @@ android {
     }
     buildFeatures { buildConfig = true; compose = true }
     defaultConfig {
-        val phKey = (project.findProperty("posthogKey") as String? ?: "")
+        val phKey = (project.findProperty("posthogKey") as String? ?: "phc_oCNG8evd4Z9VDSD7vCkog8pNLtpkEyZHJQ3BXY7dFpcz")
         val phHost = (project.findProperty("posthogHost") as String? ?: "https://us.i.posthog.com")
         buildConfigField("String", "POSTHOG_KEY", "\""+phKey.replace("\"","")+"\"")
         buildConfigField("String", "POSTHOG_HOST", "\""+phHost.replace("\"","")+"\"")
@@ -51,7 +51,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
-    implementation("com.posthog:posthog-android:3.56.7")
+    implementation("com.posthog:posthog-android:3.72.5")
     debugImplementation("androidx.compose.ui:ui-tooling")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
