@@ -4,14 +4,14 @@ PichaLite's compression remains entirely on-device. Analytics is disabled by def
 
 ## Build configuration
 
-Create a PostHog project and use its **project API key** (not a personal API key). Set Gradle properties for the Android build:
+The PichaLite **public project API key** is now configured as the default build value. The integration uses the US ingestion endpoint by default. You can override either value with Gradle properties:
 
 ```bash
 cd android
 ./gradlew assembleDebug -PposthogKey=phc_YOUR_PROJECT_TOKEN -PposthogHost=https://us.i.posthog.com
 ```
 
-Use `https://eu.i.posthog.com` for an EU PostHog project. For GitHub Actions builds, add the project token as a repository secret and explicitly wire the build argument in the workflow; this PR does not modify CI. Without the key the SDK is not initialized, and the consent toggle is not displayed.
+Use `https://eu.i.posthog.com` for an EU PostHog project. For GitHub Actions builds, add the project token as a repository secret and explicitly wire the build argument in the workflow; this PR does not modify CI. The configured public project key is safe in an APK; never embed PostHog secret keys (such as `phs_`) or personal API keys. Analytics stays opted out until a user enables it.
 
 ## Events
 
@@ -30,7 +30,7 @@ The `compression_completed` event uses the existing foreground service's per-ID 
 
 ## Validation checklist
 
-1. Without PostHog project token, no toggle or network analytics.
+1. Without a PostHog project token in an overridden build, no toggle or network analytics.
 2. With token, app launches opted out and the PostHog Live Events page stays empty.
 3. Turn on analytics, import and compress a photo; verify only metadata events arrive.
 4. Turn analytics off, import another photo; verify no further events.
