@@ -40,6 +40,13 @@ class PhotoService : Service() {
                         val photo = jobs.getJSONObject(i)
                         if (photo.getString("status") == "ready" && !preferences.getBoolean(photo.getString("id"), false)) {
                             preferences.edit().putBoolean(photo.getString("id"), true).apply()
+                            val inputBytes = photo.optLong("input_bytes", 0L)
+                            val outputBytes = photo.optLong("output_bytes", 0L)
+                            PichaAnalytics.capture("compression_completed", mapOf(
+                                "input_bytes" to inputBytes,
+                                "output_bytes" to outputBytes,
+                                "compressed_bytes_saved" to (inputBytes - outputBytes).coerceAtLeast(0L)
+                            ))
                             fresh++
                         }
                     }
