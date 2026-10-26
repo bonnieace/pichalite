@@ -149,3 +149,7 @@ qualify for the physical-device bonus.
 
 MIT licensed. See `LICENSE`.
 
+
+## Desktop and editor clients
+
+Windows desktop and VS Code previews live in [`clients/`](clients/README.md). They share the Rust image encoder, save non-destructive copies and package through the dedicated Windows workflow. See the client README for build instructions, exact scope and validation limits.

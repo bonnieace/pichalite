@@ -7,3 +7,8 @@
 *.apk
 *.log
 .idea/
+/clients/**/target/
+/clients/**/node_modules/
+/clients/vscode/bin/*.exe
+/clients/vscode/bin/pichalite-cli
+*.vsix

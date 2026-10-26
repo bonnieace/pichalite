@@ -1,0 +1,24 @@
+[package]
+name = "pichalite-native"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[lib]
+name = "pichalite_native"
+
+[[bin]]
+name = "pichalite-cli"
+path = "src/main.rs"
+
+[dependencies]
+pichalite = { path = "../..", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+
+[dev-dependencies]
+image = { version = "=0.25.9", default-features = false, features = ["jpeg", "png", "webp"] }
+
+[patch.crates-io]
+rivium-util = { path = "../../vendor/rivium-util" }

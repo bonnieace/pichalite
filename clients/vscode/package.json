@@ -1,0 +1,91 @@
+{
+  "name": "pichalite",
+  "displayName": "PichaLite \u2014 Local Image Compression",
+  "description": "Compress JPEG, PNG and WebP images locally with PichaLite's Rust encoder.",
+  "version": "0.1.0",
+  "publisher": "bonnieace",
+  "license": "MIT",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bonnieace/pichalite.git",
+    "directory": "clients/vscode"
+  },
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./src/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "PichaLite runs a local executable and creates image copies."
+    },
+    "virtualWorkspaces": {
+      "supported": false
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "pichalite.compress",
+        "title": "PichaLite: Compress Images",
+        "icon": "$(file-media)"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "pichalite.compress",
+          "when": "resourceScheme == file && (explorerResourceIsFolder || resourceExtname =~ /\\.(jpe?g|png|webp)$/i)",
+          "group": "pichalite"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "pichalite.compress",
+          "when": "resourceScheme == file && resourceExtname =~ /\\.(jpe?g|png|webp)$/i",
+          "group": "pichalite"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "PichaLite",
+      "properties": {
+        "pichalite.quality": {
+          "type": "integer",
+          "default": 82,
+          "minimum": 40,
+          "maximum": 95,
+          "description": "JPEG quality for new copies."
+        },
+        "pichalite.maxEdge": {
+          "type": "integer",
+          "default": 4096,
+          "minimum": 256,
+          "maximum": 40000,
+          "description": "Maximum output edge in pixels. Set 40000 to preserve dimensions within input limits."
+        },
+        "pichalite.executablePath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Optional absolute path to your own pichalite-cli executable. The Windows x64 package includes one."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "check": "node --check src/extension.js && node --check src/runner.js",
+    "package": "node scripts/verify-binary.js && vsce package --target win32-x64 --out PichaLite-0.1.0-win32-x64.vsix"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.0.0"
+  }
+}
