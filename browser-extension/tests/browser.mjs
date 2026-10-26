@@ -25,6 +25,7 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 const browser = await engines[engineName].launch({executablePath: engineName === 'chromium' ? process.env.PICHALITE_CHROMIUM || undefined : undefined, headless: true, args: engineName === 'chromium' ? ['--no-sandbox','--disable-dev-shm-usage'] : []});
 const context = await browser.newContext({viewport: {width: 420, height: 920}, serviceWorkers: 'block'});
 const errors = [];
+let app;
 const pages = new Map();
 let nextTab = 1;
 function fixtureHTML(url) {
@@ -108,7 +109,7 @@ try {
   await photoPage.getByRole('link',{name:'Photo original1'}).click();
   await photoPage.waitForFunction(()=>document.querySelector('#pichalite-selection-toolbar').shadowRoot.querySelector('#count').textContent==='1 selected');
   assert.equal(Object.keys(local).filter(k=>k.startsWith('selection:')).length,1);
-  const app=await context.newPage();app.on('pageerror',error=>errors.push(error.message));
+  app=await context.newPage();app.on('pageerror',error=>errors.push(error.message));
   await app.goto(origin+'/app.html');
   await app.waitForFunction(()=>document.getElementById('account').textContent.includes('example.test'));
   await app.getByRole('button',{name:'Add to batch'}).click();
@@ -116,7 +117,8 @@ try {
   assert(await app.getByRole('button',{name:'Compress & upload'}).isDisabled());
   await app.locator('#metadata').check();
   await app.getByRole('button',{name:'Compress & upload'}).click();
-  await app.waitForFunction(()=>document.querySelector('.state')?.textContent==='verified',{},{timeout:60000});
+  await app.waitForFunction(()=>document.querySelector('.state')?.textContent==='verified'||document.querySelector('.item .error'),{},{timeout:60000});
+  assert.equal(await app.locator('.state').textContent(),'verified',await app.locator('#items').textContent());
   assert.equal(uploads,1);assert.equal(trashes,0);
   let records=await app.evaluate(async()=>{const db=await import('./db.js');return db.allItems()});
   assert.equal(records[0].state,'verified');assert(records[0].outputBytes<records[0].originalBytes);
@@ -152,4 +154,8 @@ try {
   assert.deepEqual(errors,[]);
   console.log(engineName + ' PASS: selection → real browser compression → upload → exact-byte verification → mutation/account guards → approved trash → reload persistence.');
   console.log('Fixture only: live Google Photos and actual extension API integration still require validation.');
+} catch(error) {
+  console.error('Engine:',engineName,'Page errors:',errors);
+  if(app)console.error('Application state:',await app.locator('body').textContent().catch(()=>'(unavailable)'));
+  throw error;
 } finally { await context.close();await browser.close();await new Promise(resolve=>server.close(resolve)); }
