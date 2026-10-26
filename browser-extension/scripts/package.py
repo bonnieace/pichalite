@@ -37,14 +37,15 @@ def build(target):
     files = [p for p in root.iterdir() if p.suffix in {'.js', '.css', '.html'} or p.name == 'README.md']
     for file in files:
         shutil.copyfile(file, directory / file.name)
+    shutil.copytree(root / 'icons', directory / 'icons', dirs_exist_ok=True)
     shutil.copyfile(root.parent / 'LICENSE', directory / 'LICENSE')
     (directory / 'manifest.json').write_text(json.dumps(manifest_for(target), indent=2) + '\n')
     suffix = 'source' if target == 'safari' else 'preview'
     archive = out / f'PichaLite-Google-Photos-{version}-{target}-{suffix}.zip'
     with ZipFile(archive, 'w', ZIP_DEFLATED) as bundle:
-        for file in sorted(directory.iterdir()):
+        for file in sorted(directory.rglob('*')):
             if file.is_file():
-                bundle.write(file, file.name)
+                bundle.write(file, file.relative_to(directory))
     print(archive)
 
 

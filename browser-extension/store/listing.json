@@ -1,0 +1,21 @@
+{
+  "releaseVersion": "0.2.1",
+  "name": "PichaLite for Google Photos — Preview",
+  "summary": "Select photos, compress locally, verify uploaded replacements and review originals for cleanup.",
+  "singlePurpose": "Create smaller replacements for selected Google Photos images, verify them and let the user review originals for cleanup.",
+  "category": "Productivity",
+  "language": "English",
+  "homepage": "https://pichalite.co.ke/extensions/",
+  "privacyPolicy": "https://pichalite.co.ke/extensions/privacy/",
+  "supportURL": "https://github.com/bonnieace/pichalite/issues",
+  "description": "Your photos. Lighter.\n\nPichaLite helps you create smaller copies of selected Google Photos images directly from your desktop browser. Compression runs on your computer. Replacement files upload directly to your Google Photos account.\n\nHOW IT WORKS\n1. Select photos with the PichaLite toolbar in Google Photos.\n2. Choose JPEG quality and compress locally.\n3. Upload smaller replacements.\n4. PichaLite independently downloads replacements and compares their SHA-256 hashes with the compressed files.\n5. Review and approve moving verified originals to Google Photos trash. Both copies are rechecked before cleanup.\n\nInterrupted uploads require reconciliation instead of automatic reupload. PichaLite never empties trash automatically.\n\nPREVIEW LIMITATIONS\nThis is an early developer preview. Installed-extension, live Google Photos replacement acceptance testing is still outstanding. Start with disposable copies. This release supports ordinary JPEG and opaque PNG inputs, up to 40 MB and 40 megapixels, and English Google Photos controls. Transparent/animated images and detected motion/HDR/multi-picture images are skipped. Replacements are new items: Google-only dates, albums, favourites, comments, edit history and shared links are not transferred. Cloud deletion can affect synced devices. Smaller file sizes do not guarantee equivalent Google storage quota savings. An already-full Google account can block replacement uploads.\n\nPRIVACY\nPhoto processing and batch records stay on your device. Selected replacement images and embedded metadata, which may include GPS location, are uploaded only to Google Photos. The extension contains no analytics or advertising code. Read the privacy page for permissions, storage and deletion details.\n\nPichaLite is an independent project and is not affiliated with or endorsed by Google.",
+  "permissions": {
+    "storage": "Keeps selected photo identities and local preferences across page navigation.",
+    "unlimitedStorage": "Retains original/compressed image bytes and durable batch records locally for verification and recovery; available disk space still limits storage.",
+    "scripting": "Runs the packaged Google Photos UI adapter and a one-shot file-input bridge in the user's dedicated work tab.",
+    "sidePanel": "Displays the PichaLite workspace alongside Google Photos in supported Chromium browsers.",
+    "webRequest": "Observes only an explicitly armed original-download attachment response in the exact work tab, so the extension can retrieve original bytes. It does not collect general browsing history.",
+    "hostPermissions": "Limited to photos.google.com and googleusercontent.com media hosts for selection, authenticated original downloads, replacement uploads, verification and approved trash actions."
+  },
+  "reviewerNotes": "Source is readable JavaScript with no remote executable code, minification, native companion or build-time runtime dependencies. No PichaLite account or API key is needed. Use a disposable Google Photos account containing ordinary JPEGs/opaque PNGs and spare Google storage. Chrome/Edge/Brave use the Chromium ZIP; Firefox uses its dedicated manifest. Screenshots show the actual workspace with synthetic fixture data; they do not establish live Google Photos integration. Automated unit tests and Chromium/Firefox/WebKit fixtures pass, and Safari Xcode source generation is validated. Installed-extension/live Photos acceptance checks are explicitly still outstanding; do not represent those as complete. Account identifiers and batch metadata are local, and the extension has no telemetry. Firefox is desktop-only and its manifest declares websiteContent/locationInfo transmission for image/EXIF uploads to Google Photos."
+}

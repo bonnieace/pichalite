@@ -14,5 +14,11 @@ test('target packages use native browser manifests and retain the same safety co
   for(const target of ['chromium','firefox','safari']) {
     assert.equal(readFileSync(`dist/${target}/runner.js`,'utf8'),readFileSync('runner.js','utf8'));
     assert.equal(readFileSync(`dist/${target}/core.js`,'utf8'),readFileSync('core.js','utf8'));
+    const manifest=load(target);
+    for(const [size, icon] of Object.entries(manifest.icons)) {
+      const data=readFileSync(`dist/${target}/${icon}`);
+      assert.equal(data.readUInt32BE(16),Number(size));
+      assert.equal(data.readUInt32BE(20),Number(size));
+    }
   }
 });

@@ -127,6 +127,16 @@ try {
   assert.equal(await app.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   await mkdir(root+'test-results',{recursive:true});
   await app.screenshot({path:root+'test-results/verified-batch.png',fullPage:true});
+  if(process.env.PICHALITE_STORE_SHOTS==='1') {
+    // Actual workspace rendering with explicitly synthetic fixture data. These
+    // are listing illustrations, not evidence of live Google Photos validation.
+    await mkdir(root+'store',{recursive:true});
+    await app.setViewportSize({width:1280,height:800});
+    await app.screenshot({path:root+'store/screenshot-workspace.png'});
+    await app.locator('.results').scrollIntoViewIfNeeded();
+    await app.screenshot({path:root+'store/screenshot-results.png'});
+    await app.setViewportSize({width:420,height:920});
+  }
   // Replacement mutation must stop cleanup without touching the original.
   corruptReplacement=true;
   await app.locator('#cleanup').click();await app.locator('#confirm-cleanup').click();
