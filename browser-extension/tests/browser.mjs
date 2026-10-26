@@ -40,13 +40,14 @@ function fixtureHTML(url) {
   }
   const links = [...library].filter(([,v]) => !v.trashed).reverse().map(([id]) => `<a href="/photo/${id}" aria-label="Photo ${id}"><img width="80" height="80" alt="${id}" src="https://lh3.googleusercontent.com/${id}"></a>`).join('');
   return `<!doctype html><html><body>${accountControl}<h1>Photos</h1>${links}<button aria-label="Create and add photos" id="create">Create</button><script>
-    document.getElementById('create').onclick=()=>{const menu=document.createElement('ul');menu.setAttribute('role','menu');menu.innerHTML='<li role="menuitem" aria-label="Import photos from your computer">Import photos</li>';document.body.append(menu);menu.querySelector('li').onclick=()=>{const input=document.createElement('input');input.type='file';input.accept='image/*';input.onchange=async(event)=>{await fetch('/fixture-upload',{method:'POST',body:event.target.files[0]});const s=document.createElement('div');s.setAttribute('role','status');s.textContent='Upload complete';document.body.append(s)};input.click();menu.remove()}};
+    document.getElementById('create').onclick=()=>{const menu=document.createElement('ul');menu.setAttribute('role','menu');menu.innerHTML='<li role="menuitem" aria-label="Import photos from your computer">Import photos</li>';document.body.append(menu);menu.querySelector('li').onclick=()=>{const input=document.createElement('input');input.type='file';input.accept='image/*';input.onchange=async(event)=>{await fetch('/fixture-upload',{method:'POST',body:JSON.stringify([...new Uint8Array(await event.target.files[0].arrayBuffer())])});const s=document.createElement('div');s.setAttribute('role','status');s.textContent='Upload complete';document.body.append(s)};input.click();menu.remove()}};
     </script></body></html>`;
 }
 await context.route('https://photos.google.com/**', async route => {
   const path = new URL(route.request().url()).pathname;
+  // Textual fixture transport lets WebKit's interception protocol expose the file bytes.
   if (path === '/fixture-upload') {
-    uploads++; library.set(`replacement${uploads}`, {bytes: route.request().postDataBuffer(), trashed: false});
+    uploads++; library.set(`replacement${uploads}`, {bytes: Buffer.from(JSON.parse(route.request().postData())), trashed: false});
     return route.fulfill({status: 200, body: 'ok'});
   }
   if (path.startsWith('/fixture-trash/')) {
