@@ -11,6 +11,10 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
     defaults:
       run:
         working-directory: browser-extension
@@ -24,11 +28,33 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
-      - run: npx playwright install --with-deps chromium
+      - name: Validate Firefox package
+        if: matrix.browser == 'firefox'
+        run: npx --yes addons-linter@10.15.0 dist/firefox --output json
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
       - run: npm run test:browser
+        env:
+          PICHALITE_BROWSER: ${{ matrix.browser }}
       - run: npm run package
       - uses: actions/upload-artifact@v4
         with:
-          name: PichaLite-Google-Photos-preview
+          name: PichaLite-Google-Photos-preview-${{ matrix.browser }}
           path: browser-extension/dist/*.zip
+          retention-days: 7
+  safari-source:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: browser-extension
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/build-safari.sh
+      - name: Check generated Safari project
+        run: |
+          project_file=$(python3 -c "from pathlib import Path; paths=list(Path('dist/safari-xcode').rglob('*.xcodeproj')); assert len(paths)==1, paths; print(paths[0])")
+          xcodebuild -list -json -project "$project_file"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PichaLite-Safari-Xcode-source
+          path: browser-extension/dist/safari-xcode/
           retention-days: 7

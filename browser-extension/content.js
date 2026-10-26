@@ -1,6 +1,7 @@
 (() => {
   if (globalThis.__pichaliteInstalled) return;
   globalThis.__pichaliteInstalled = true;
+  const ext = globalThis.browser?.runtime ? globalThis.browser : globalThis.chrome;
   const PHOTO = /^\/(?:u\/\d+\/)?photo\/([A-Za-z0-9_-]+)$/;
   const uploads = new Map();
   let selecting = false;
@@ -42,10 +43,10 @@
   async function add(url, name) {
     const identity = account();
     const key = `selection:${identity}:${PHOTO.exec(new URL(url).pathname)[1]}`;
-    const stored = await chrome.storage.local.get(key);
-    if (stored[key]) await chrome.storage.local.remove(key);
-    else await chrome.storage.local.set({[key]: {originalURL: url, account: identity, route: route(), label: name || 'Selected photo'}});
-    const selection = await chrome.storage.local.get(null);
+    const stored = await ext.storage.local.get(key);
+    if (stored[key]) await ext.storage.local.remove(key);
+    else await ext.storage.local.set({[key]: {originalURL: url, account: identity, route: route(), label: name || 'Selected photo'}});
+    const selection = await ext.storage.local.get(null);
     count.textContent = `${Object.keys(selection).filter(k => k.startsWith(`selection:${identity}:`)).length} selected`;
   }
   // A shadow root keeps PichaLite's controls independent of Google's styles.
@@ -55,7 +56,7 @@
   const root = host.attachShadow({mode: 'closed'});
   root.innerHTML = `<style>:host{font:14px system-ui}section{display:flex;gap:9px;align-items:center;max-width:95vw;flex-wrap:wrap;background:#112a24;color:#fff;padding:10px 14px;border-radius:18px;box-shadow:0 5px 28px #0004}button{font:inherit;border:0;border-radius:11px;padding:10px;background:#d1fa8c;color:#112a24;cursor:pointer}span{max-width:190px}button[aria-pressed=true]{background:#fff}</style><section><b>PichaLite</b><button id="select" aria-pressed="false">Select photos</button><button id="current">Add open photo</button><button id="open">Open PichaLite</button><span id="count" role="status">Local compression</span></section>`;
   const count = root.getElementById('count');
-  root.getElementById('open').onclick = () => chrome.runtime.sendMessage({type: 'open-panel'}).then(result => {
+  root.getElementById('open').onclick = () => ext.runtime.sendMessage({type: 'open-panel'}).then(result => {
     if (!result?.ok) count.textContent = 'Click the PichaLite extension icon to open the panel';
   }).catch(() => { count.textContent = 'Click the PichaLite extension icon to open the panel'; });
   root.getElementById('select').onclick = event => {
@@ -169,8 +170,8 @@
     }
     throw new Error('Unknown PichaLite command');
   }
-  chrome.runtime.onMessage.addListener((message, sender, respond) => {
-    if (sender.id !== chrome.runtime.id || message.type !== 'pichalite-command') return;
+  ext.runtime.onMessage.addListener((message, sender, respond) => {
+    if (sender.id !== ext.runtime.id || message.type !== 'pichalite-command') return;
     command(message).then(value => respond({ok: true, value}), error => respond({ok: false, error: error.message}));
     return true;
   });

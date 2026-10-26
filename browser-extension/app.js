@@ -1,3 +1,4 @@
+import {ext} from './api.js';
 import {allItems, forgetItem, getBlob, putItem} from './db.js';
 import {eligible, outputName, photoIdentity, totals} from './core.js';
 import {command} from './transport.js';
@@ -20,17 +21,17 @@ async function action(task) {
   finally { await render(); }
 }
 async function connect() {
-  const tabs = await chrome.tabs.query({url: 'https://photos.google.com/*'});
+  const tabs = await ext.tabs.query({url: 'https://photos.google.com/*'});
   const candidates = tabs.filter(tab => tab.id !== runner.tabId).sort((a, b) => Number(b.active) - Number(a.active));
   if (!candidates.length) {
-    await chrome.tabs.create({url: 'https://photos.google.com/'});
+    await ext.tabs.create({url: 'https://photos.google.com/'});
     throw new Error('Sign in to Google Photos, then choose Connect tab.');
   }
   sourceTab = candidates[0].id;
   let context;
   try { context = await command(sourceTab, 'describe'); }
   catch {
-    await chrome.scripting.executeScript({target: {tabId: sourceTab}, files: ['content.js']});
+    await ext.scripting.executeScript({target: {tabId: sourceTab}, files: ['content.js']});
     context = await command(sourceTab, 'describe');
   }
   account = context.account;
@@ -39,7 +40,7 @@ async function connect() {
 }
 async function importSelection() {
   if (!account) await connect();
-  const stored = await chrome.storage.local.get(null);
+  const stored = await ext.storage.local.get(null);
   const chosen = Object.entries(stored).filter(([key, value]) => key.startsWith('selection:') && value.account === account);
   if (!chosen.length) throw new Error('Select photos with the PichaLite toolbar in Google Photos first.');
   await navigator.locks.request('pichalite-photo-runner', {ifAvailable: true}, async lock => {
@@ -51,7 +52,7 @@ async function importSelection() {
         const item = {...selected, id: crypto.randomUUID(), state: 'selected', createdAt: Date.now()};
         await putItem(item); current.push(item);
       }
-      await chrome.storage.local.remove(key);
+      await ext.storage.local.remove(key);
     }
   });
 }
@@ -66,7 +67,7 @@ function link(label, url) {
 }
 async function render() {
   items = (await allItems()).filter(item => item.account === account).sort((a, b) => a.createdAt - b.createdAt);
-  const stored = await chrome.storage.local.get(null);
+  const stored = await ext.storage.local.get(null);
   $('selected-count').textContent = Object.entries(stored).filter(([key, value]) => key.startsWith('selection:') && value.account === account).length;
   const stats = totals(items);
   $('saved').textContent = bytes(stats.smallerBy);
@@ -126,7 +127,7 @@ $('start').onclick = () => action(async () => {
 $('pause').onclick = () => { runner.paused = true; notice('Pausing after the current safe operation…'); };
 $('open-tab').onclick = () => action(async () => {
   if (runner.busy) throw new Error('Pause this panel before opening a workspace tab');
-  await chrome.tabs.create({url: chrome.runtime.getURL('app.html')});
+  await ext.tabs.create({url: ext.runtime.getURL('app.html')});
 });
 $('cleanup').onclick = () => {
   cleanupIds = items.filter(item => eligible(item, account)).map(item => item.id);
@@ -148,7 +149,7 @@ $('confirm-link').onclick = () => action(async () => {
   const url = $('replacement-url').value.trim(); photoIdentity(url);
   $('link-dialog').close(); await runner.reconcile(linkedItem, url);
 });
-chrome.storage.onChanged.addListener(() => render().catch(error => notice(error.message)));
+ext.storage.onChanged.addListener(() => render().catch(error => notice(error.message)));
 window.addEventListener('beforeunload', event => { if (runner.busy) { event.preventDefault(); event.returnValue = ''; } });
 await runner.recover();
 await render();

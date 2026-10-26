@@ -1,19 +1,20 @@
+import {ext} from './api.js';
 import {assertAccount, mediaURL, MAX_BYTES} from './core.js';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 export async function command(tabId, command, args = {}) {
-  const result = await chrome.tabs.sendMessage(tabId, {type: 'pichalite-command', command, ...args});
+  const result = await ext.tabs.sendMessage(tabId, {type: 'pichalite-command', command, ...args});
   if (!result?.ok) throw new Error(result?.error || 'Google Photos did not respond. Reload its tab and try again.');
   return result.value;
 }
 export async function navigate(tabId, url, account) {
   if (new URL(url).origin !== 'https://photos.google.com') throw new Error('Unexpected navigation');
-  await chrome.tabs.update(tabId, {url});
+  await ext.tabs.update(tabId, {url});
   const deadline = Date.now() + 20000;
   let lastError;
   while (Date.now() < deadline) {
     await sleep(250);
     try {
-      const tab = await chrome.tabs.get(tabId);
+      const tab = await ext.tabs.get(tabId);
       if (tab.status !== 'complete' || tab.url !== url) continue;
       const context = await command(tabId, 'describe');
       assertAccount(account, context.account);
@@ -23,7 +24,7 @@ export async function navigate(tabId, url, account) {
   throw lastError || new Error('Google Photos did not load the expected page. Sign in to the original account.');
 }
 export async function download(tabId, url, account) {
-  const result = await chrome.runtime.sendMessage({type: 'download-original', tabId, url, account});
+  const result = await ext.runtime.sendMessage({type: 'download-original', tabId, url, account});
   if (!result?.ok) throw new Error(result?.error || 'Could not obtain original image');
   const response = await fetch(mediaURL(result.value.url), {credentials: 'include', signal: AbortSignal.timeout(60000), cache: 'no-store'});
   if (!response.ok) throw new Error(`Download failed (${response.status})`);
@@ -81,6 +82,6 @@ export async function upload(tabId, item, blob, name) {
     for (let n = 0; n < part.length; n += 8192) binary += String.fromCharCode(...part.subarray(n, n + 8192));
     await command(tabId, 'upload-chunk', {account: item.account, id: item.id, chunk: btoa(binary)});
   }
-  await chrome.scripting.executeScript({target: {tabId}, world: 'MAIN', func: armUploadInput});
+  await ext.scripting.executeScript({target: {tabId}, world: 'MAIN', func: armUploadInput});
   await command(tabId, 'upload-commit', {account: item.account, id: item.id});
 }

@@ -1,3 +1,4 @@
+import {ext} from './api.js';
 import {allItems, putItem, getBlob, putBlob} from './db.js';
 import {assertAccount, eligible, outputName, photoIdentity, recover, sha256} from './core.js';
 import {compress, inspect} from './image.js';
@@ -24,7 +25,7 @@ export class Runner {
     });
   }
   async workTab(account, route) {
-    const tab = await chrome.tabs.create({url: `https://photos.google.com${route || ''}/`, active: false});
+    const tab = await ext.tabs.create({url: `https://photos.google.com${route || ''}/`, active: false});
     this.tabId = tab.id;
     this.account = account;
     return tab.id;

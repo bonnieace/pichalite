@@ -1,27 +1,63 @@
-# PichaLite for Google Photos — 0.1.0 preview
+# PichaLite for Google Photos — 0.2.0 preview
 
-A desktop Chromium Manifest V3 extension for selecting photos in Google Photos,
+A desktop WebExtension for selecting photos in Google Photos,
 compressing them locally, uploading smaller copies, independently verifying the
 copies, and reviewing originals for recoverable cleanup.
 
-**Status:** implementation preview. Fifteen automated tests and a real Chromium
+**Status:** implementation preview. Twenty automated tests and a real Chromium
 end-to-end fixture pass. Current live Google Photos account, photo-link, download
 menu and upload-menu semantics were inspected on 26 October 2026. The extension
 has **not** completed an installed-extension replacement cycle against live Google
 Photos. Validate it with disposable copies before using personal originals.
 
-## Install
+## Browser builds and installation
 
-1. Download and extract `PichaLite-Google-Photos-0.1.0-preview.zip`.
-2. Open `chrome://extensions` (or `edge://extensions`), enable Developer mode,
-   choose **Load unpacked**, and select the extracted directory containing
-   `manifest.json`.
-3. Open or reload Google Photos in an English-language desktop browser.
-4. Pin PichaLite, then click its extension icon to open the side panel. The
-   toolbar's **Open PichaLite** button also opens it when supported.
+| Browser | Package / interface | Release status |
+| --- | --- | --- |
+| Chrome / Edge / Brave desktop | `0.2.0-chromium-preview.zip`; side panel when available, otherwise a workspace tab | Unpacked developer preview; store publication pending |
+| Firefox 142+ desktop | `0.2.0-firefox-preview.zip`; native sidebar | Temporary developer preview; Mozilla signing/publication pending |
+| Safari on Mac | `0.2.0-safari-source.zip`; workspace tab | Developer source only; macOS/Xcode packaging and Apple signing required |
 
-This is a Chrome/Edge desktop extension, separate from PichaLite's Android and
-VS Code applications. It is not published in the Chrome Web Store.
+The website's browser-aware `/extensions/` page chooses the appropriate preview
+and shows its installation steps. Official store links can replace the preview
+flow once genuine listings are available. Mobile installation is not advertised.
+
+### Chrome, Edge and Brave
+
+1. Extract the Chromium preview ZIP.
+2. Open `chrome://extensions`, `edge://extensions` or `brave://extensions`.
+3. Enable Developer mode, choose **Load unpacked**, and select the directory
+   containing `manifest.json`.
+4. Reload Google Photos and click PichaLite's toolbar icon. A supported native
+   side panel opens; otherwise PichaLite opens its workspace tab.
+
+### Firefox
+
+1. Extract the Firefox preview ZIP.
+2. Open `about:debugging#/runtime/this-firefox` in Firefox 142 or later.
+3. Choose **Load Temporary Add-on** and select the extracted `manifest.json`.
+4. Grant the requested Google Photos/media-host access and click PichaLite's
+   toolbar icon to open its native sidebar.
+
+Firefox removes temporary extensions when it restarts. A signed Mozilla build
+is required for normal permanent installation. The Firefox manifest discloses
+website-content/location transmission because replacement images, including
+embedded EXIF GPS metadata when present, are uploaded to Google Photos. Account
+identifiers and batch records stay local; there is no PichaLite telemetry.
+
+### Safari developer build
+
+On a Mac with Xcode installed:
+
+```sh
+cd browser-extension
+bash scripts/build-safari.sh
+```
+
+The script generates a new Xcode project from `dist/safari/` without overwriting
+an existing project. Open the generated project, select a signing team, and build
+for your Mac. Apple signing/distribution is separate. The Safari source ZIP is
+not an installable Safari app, and no App Store listing is claimed.
 
 ## Use
 
@@ -104,11 +140,18 @@ Multiple panels/tabs share a Web Lock so only one batch runner can operate.
 - `db.js`: IndexedDB records and local original/output blobs.
 - `app.*`: side panel and optional workspace tab.
 
+The packaged code uses the native Promise API namespace on Firefox/Safari, and
+falls back to Chrome’s namespace on Chromium. Browser-specific manifests select
+service workers, event scripts, side panels or sidebars without broadening photo
+access. `browser-ui.js` uses a normal extension workspace tab when a native sidebar
+is unavailable.
+
 Permissions are restricted to `photos.google.com` and its `googleusercontent.com`
 media hosts, with storage, sidePanel, scripting and observational webRequest.
-`unlimitedStorage` prevents normal extension storage quota/eviction from losing
-working batches; it does not create physical disk space. No Google API keys,
-OAuth application, debugger permission, native companion, PichaLite backend,
+On Chromium/Firefox, `unlimitedStorage` prevents normal extension storage quota/eviction from losing
+working batches; it does not create physical disk space. Safari source omits this
+unsupported permission and remains subject to its storage limits. No Google API keys,
+OAuth application, debugger permission, compression companion, PichaLite backend,
 analytics, or external encoder downloads are required. Photos are sent only to
 Google Photos when uploading their replacements.
 
@@ -133,6 +176,11 @@ encoder, runner and UI. It never contacts a real account. It proves the
 application workflow, not installation, live authenticated download capture,
 or Google Photos' server behaviour. Unit tests separately exercise the actual
 background download observer with API event doubles.
+
+The GitHub workflow runs the same fixture in Chromium, Firefox and WebKit, and
+generates a Safari Xcode source project on macOS. Engine fixtures still mock
+extension APIs and do not prove native extension installation or live Photos
+behaviour in each browser.
 
 The GitHub workflow validates and packages only this extension. The existing
 Android/Rust workflow remains unchanged and may also run on repository pushes.

@@ -6,7 +6,9 @@ import {createServer} from 'node:http';
 import {fileURLToPath} from 'node:url';
 import assert from 'node:assert/strict';
 const require = createRequire(import.meta.url);
-const {chromium} = require('playwright');
+const engines = require('playwright');
+const engineName = process.env.PICHALITE_BROWSER || 'chromium';
+if (!['chromium', 'firefox', 'webkit'].includes(engineName)) throw new Error('Unknown browser engine');
 const root = fileURLToPath(new URL('../', import.meta.url));
 const fixtureAccount = 'pichalite-fixture@example.test';
 const library = new Map();
@@ -20,7 +22,7 @@ const server = createServer(async (req, res) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
-const browser = await chromium.launch({executablePath: process.env.PICHALITE_CHROMIUM || undefined, headless: true, args: ['--no-sandbox','--disable-dev-shm-usage']});
+const browser = await engines[engineName].launch({executablePath: engineName === 'chromium' ? process.env.PICHALITE_CHROMIUM || undefined : undefined, headless: true, args: engineName === 'chromium' ? ['--no-sandbox','--disable-dev-shm-usage'] : []});
 const context = await browser.newContext({viewport: {width: 420, height: 920}, serviceWorkers: 'block'});
 const errors = [];
 const pages = new Map();
@@ -82,6 +84,7 @@ await context.exposeBinding('fixtureBridge', async ({page}, op, ...args) => {
 await context.addInitScript(({origin}) => {
   const bridge=(op,...args)=>window.fixtureBridge(op,...args);
   window.chrome={runtime:{id:'fixture-extension',getURL:path=>origin+'/'+path,onMessage:{addListener:listener=>{window.__photoListener=listener}},sendMessage:message=>bridge('download',message)},storage:{local:{get:keys=>bridge('get',keys),set:values=>bridge('set',values),remove:keys=>bridge('remove',keys)},onChanged:{addListener:()=>{}}},tabs:{query:()=>bridge('query'),create:value=>bridge('create',value),update:(...args)=>bridge('update',...args),get:id=>bridge('tab',id),sendMessage:(...args)=>bridge('send',...args)},scripting:{executeScript:({target,func})=>bridge('execute',target.tabId,func.toString())}};
+  if (!/Chrome\//.test(navigator.userAgent)) { window.browser = window.chrome; delete window.chrome; }
 }, {origin});
 try {
   // Create a photographic, high-quality original using the browser itself.
@@ -147,6 +150,6 @@ try {
   await app.reload();await app.waitForSelector('.state');
   assert.equal(await app.locator('.state').textContent(),'trashed');assert.equal(uploads,1);assert.equal(trashes,1);
   assert.deepEqual(errors,[]);
-  console.log('PASS: selection → real browser compression → upload → exact-byte verification → mutation/account guards → approved trash → reload persistence.');
+  console.log(engineName + ' PASS: selection → real browser compression → upload → exact-byte verification → mutation/account guards → approved trash → reload persistence.');
   console.log('Fixture only: live Google Photos and actual extension API integration still require validation.');
 } finally { await context.close();await browser.close();await new Promise(resolve=>server.close(resolve)); }
