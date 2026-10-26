@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "PichaLite for Google Photos — Preview",
+  "version": "0.1.0",
+  "description": "Select photos, compress locally, verify uploaded replacements and review originals for cleanup.",
+  "minimum_chrome_version": "120",
+  "permissions": ["storage", "scripting", "sidePanel", "webRequest", "unlimitedStorage"],
+  "host_permissions": ["https://photos.google.com/*", "https://*.googleusercontent.com/*"],
+  "background": {"service_worker": "background.js", "type": "module"},
+  "action": {"default_title": "Open PichaLite"},
+  "side_panel": {"default_path": "app.html"},
+  "content_scripts": [{"matches": ["https://photos.google.com/*"], "js": ["content.js"], "run_at": "document_idle"}],
+  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'none'; connect-src 'self' https://photos.google.com https://*.googleusercontent.com; img-src 'self' blob: data:;"}
+}
