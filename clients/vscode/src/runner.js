@@ -4,8 +4,10 @@ const fs=require('node:fs/promises'),path=require('node:path');
 const supported=p=>/\.(jpe?g|png|webp)$/i.test(p);
 async function collect(inputs,outputDir){
   const stack=[...inputs],files=new Set(),seen=new Set();let examined=0;
-  const excluded=path.resolve(outputDir);
-  while(stack.length){const input=path.resolve(stack.pop());if(++examined>100000)throw Error('Choose a smaller folder: more than 100,000 entries.');const stat=await fs.lstat(input);if(stat.isSymbolicLink())continue;const actual=await fs.realpath(input);if(actual===excluded||actual.startsWith(excluded+path.sep)||seen.has(actual))continue;seen.add(actual);
+  const key=value=>process.platform==='win32'?value.toLowerCase():value;
+  // Resolve Windows short-name aliases and path casing before excluding output.
+  const excluded=key(await fs.realpath(outputDir).catch(()=>path.resolve(outputDir)));
+  while(stack.length){const input=path.resolve(stack.pop());if(++examined>100000)throw Error('Choose a smaller folder: more than 100,000 entries.');const stat=await fs.lstat(input);if(stat.isSymbolicLink())continue;const actual=await fs.realpath(input);const actualKey=key(actual);if(actualKey===excluded||actualKey.startsWith(excluded+path.sep)||seen.has(actualKey))continue;seen.add(actualKey);
     if(stat.isDirectory()){for(const entry of await fs.readdir(actual,{withFileTypes:true})){if(['.git','node_modules','.pichalite'].includes(entry.name)||entry.name.startsWith('.pichalite-'))continue;stack.push(path.join(actual,entry.name));}}
     else if(stat.isFile()&&supported(actual)){files.add(actual);if(files.size>5000)throw Error('Choose at most 5,000 images per batch.');}
   }return [...files].sort();

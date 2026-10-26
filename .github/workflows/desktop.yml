@@ -30,6 +30,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
+          key: desktop-clients-complete-v1
           workspaces: |
             clients/native -> target
             clients/desktop/src-tauri -> target
