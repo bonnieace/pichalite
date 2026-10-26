@@ -15,6 +15,9 @@ jobs:
   windows:
     runs-on: windows-latest
     timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -26,6 +29,7 @@ jobs:
           node-version: '22'
       - uses: Swatinem/rust-cache@v2
         with:
+          cache-on-failure: true
           workspaces: |
             clients/native -> target
             clients/desktop/src-tauri -> target
@@ -42,13 +46,13 @@ jobs:
           npm ci
           npm run check
           cargo fmt --manifest-path src-tauri/Cargo.toml --check
-          npm run build -- --locked
+          npm run build -- -- --locked
       - name: Build extension with bundled native engine
         env:
           PICHA_TEST_CLI: ${{ github.workspace }}/clients/native/target/release/pichalite-cli.exe
         working-directory: clients/vscode
         run: |
-          Copy-Item ../native/target/release/pichalite-cli.exe bin/pichalite-cli.exe
+          cp ../native/target/release/pichalite-cli.exe bin/pichalite-cli.exe
           npm ci
           npm run check
           npm test
