@@ -3,7 +3,7 @@
   "displayName": "PichaLite \u2014 Local Image Compression",
   "description": "Compress JPEG, PNG and WebP images locally with PichaLite's Rust encoder.",
   "version": "0.1.0",
-  "publisher": "bonnieace",
+  "publisher": "masota",
   "license": "MIT",
   "icon": "icon.png",
   "repository": {
@@ -87,5 +87,20 @@
   },
   "devDependencies": {
     "@vscode/vsce": "^3.0.0"
-  }
+  },
+  "homepage": "https://pichalite.co.ke/",
+  "keywords": [
+    "image",
+    "compression",
+    "jpeg",
+    "png",
+    "webp",
+    "offline",
+    "rust"
+  ],
+  "galleryBanner": {
+    "color": "#faf7f0",
+    "theme": "light"
+  },
+  "pricing": "Free"
 }

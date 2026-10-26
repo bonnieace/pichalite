@@ -2,4 +2,4 @@
 
 ## 0.1.0
 
-Initial preview: local batch compression, folder/multi-selection, progress, safe copies, bundled Windows x64 Rust engine.
+Initial Windows x64 release: local Rust image compression, Explorer selection, destination picker, progress, cancellation and safe original preservation.
