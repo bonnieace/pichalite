@@ -1,7 +1,9 @@
 name: PichaLite checks and APK
 on:
   push:
+    paths: ['src/**', 'tests/**', 'vendor/**', 'android/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'scripts/build-android.sh', 'scripts/smoke.py', 'scripts/JniSmoke.java', '.github/workflows/build.yml']
   pull_request:
+    paths: ['src/**', 'tests/**', 'vendor/**', 'android/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'scripts/build-android.sh', 'scripts/smoke.py', 'scripts/JniSmoke.java', '.github/workflows/build.yml']
   workflow_dispatch:
 permissions:
   contents: read

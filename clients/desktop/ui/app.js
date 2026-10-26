@@ -16,3 +16,6 @@ $('clear').onclick=async()=>{if(busy)return;await invoke('clear_session');photos
 $('open').onclick=()=>invoke('reveal_output').catch(e=>status(String(e)));
 if(invoke){window.__TAURI__.webviewWindow.getCurrentWebviewWindow().onDragDropEvent(async event=>{if(event.payload.type==='over')$('drop').classList.add('over');else $('drop').classList.remove('over');if(event.payload.type==='drop'&&!busy){try{await add(await invoke('import_paths',{paths:event.payload.paths}));}catch(e){status(String(e));}}}).catch(()=>{});}else{status('Open this interface in the PichaLite desktop application.');}
 sync();
+
+// The Windows smoke test exits only after the real WebView runs this UI.
+if(invoke)invoke('client_ready').catch(e=>status(String(e)));

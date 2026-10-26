@@ -47,6 +47,12 @@ jobs:
           npm run check
           cargo fmt --manifest-path src-tauri/Cargo.toml --check
           npm run build -- -- --locked
+      - name: Verify packaged desktop WebView starts
+        shell: pwsh
+        run: |
+          $app = Start-Process -FilePath clients/desktop/src-tauri/target/release/pichalite-desktop.exe -ArgumentList '--smoke-test' -PassThru
+          if (-not $app.WaitForExit(45000)) { Stop-Process -Id $app.Id -Force; throw 'Desktop startup timed out' }
+          if ($app.ExitCode -ne 0) { throw "Desktop WebView startup failed: $($app.ExitCode)" }
       - name: Build extension with bundled native engine
         env:
           PICHA_TEST_CLI: ${{ github.workspace }}/clients/native/target/release/pichalite-cli.exe
@@ -57,6 +63,7 @@ jobs:
           npm run check
           npm test
           npm run package
+          python ../../scripts/check-vsix.py PichaLite-0.1.0-win32-x64.vsix
       - name: Upload installable previews
         uses: actions/upload-artifact@v4
         with:

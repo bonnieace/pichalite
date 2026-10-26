@@ -164,10 +164,26 @@ fn reveal_output(session: State<'_, Session>) -> Result<(), String> {
         .ok_or("Choose an output folder first")?;
     tauri_plugin_opener::reveal_item_in_dir(path).map_err(|e| e.to_string())
 }
+#[tauri::command]
+fn client_ready(app: tauri::AppHandle) {
+    if std::env::args().any(|arg| arg == "--smoke-test") {
+        app.exit(0);
+    }
+}
 fn main() {
     tauri::Builder::default()
         .manage(Session::default())
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            if std::env::args().any(|arg| arg == "--smoke-test") {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(30));
+                    handle.exit(3);
+                });
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             choose_photos,
             import_paths,
@@ -175,7 +191,8 @@ fn main() {
             compress_photo,
             preview,
             clear_session,
-            reveal_output
+            reveal_output,
+            client_ready
         ])
         .run(tauri::generate_context!())
         .expect("Could not start PichaLite");
