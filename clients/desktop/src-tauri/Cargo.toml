@@ -1,0 +1,20 @@
+[package]
+name = "pichalite-desktop"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+pichalite-native = { path = "../../native" }
+rfd = "0.15"
+serde = { version = "1", features = ["derive"] }
+base64 = "0.22"
+image = { version = "=0.25.9", default-features = false, features = ["jpeg", "png", "webp"] }
+tauri-plugin-opener = "2"
+
+[patch.crates-io]
+rivium-util = { path = "../../../vendor/rivium-util" }
