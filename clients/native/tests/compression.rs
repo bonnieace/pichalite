@@ -48,3 +48,22 @@ fn tiny_inputs_keep_original_bytes_and_corrupt_files_do_not_create_outputs() {
     };
     assert!(validate(&req).is_err());
 }
+
+#[test]
+fn jpeg_and_webp_inputs_produce_readable_copies() {
+    let root = tempfile::tempdir().unwrap();
+    let out = root.path().join("copies");
+    let image = image::RgbImage::from_fn(600, 400, |x, y| {
+        image::Rgb([(x % 256) as u8, (y % 256) as u8, ((x * y) % 256) as u8])
+    });
+    for extension in ["jpg", "webp"] {
+        let input = root.path().join(format!("photo.{extension}"));
+        image.save(&input).unwrap();
+        let original = fs::read(&input).unwrap();
+        let result = compress(&input, &out, 75, 256);
+        assert_ne!(result.status, "failed", "{:?}", result.error);
+        let copy = image::open(result.output.unwrap()).unwrap();
+        assert!(copy.width() > 0 && copy.height() > 0);
+        assert_eq!(original, fs::read(input).unwrap());
+    }
+}
