@@ -16,10 +16,10 @@
     if (outer.length !== 1) throw new Error(`Expected one ${pattern} control; found ${outer.length}. This preview supports English Google Photos controls.`);
     return outer[0];
   }
-  async function until(fn, timeout = 12000) {
+  async function until(fn, stage = 'the expected Google Photos control', timeout = 12000) {
     const end = Date.now() + timeout;
     while (Date.now() < end) { const value = fn(); if (value) return value; await sleep(150); }
-    throw new Error('Google Photos did not reach the expected state. Originals have not been automatically retried.');
+    throw new Error(`Timed out waiting for ${stage}. Google's page controls may have changed; originals were not modified or automatically retried.`);
   }
   function account() {
     const nodes = [...document.querySelectorAll('[aria-label*="Google Account"],a[href*="accounts.google.com/SignOutOptions"]')];
@@ -88,7 +88,14 @@
       const menus = controls().filter(el => /^More options(?:\b|$)|^More$/i.test(label(el)));
       if (menus.length !== 1) throw new Error('Open one photo with its More options button visible.');
       menus[0].click();
-      const download = await until(() => { try { return unique(/^Download(?:\s|$)/i); } catch { return null; } });
+      const download = await until(() => {
+        const candidates = controls().filter(el => /^Download(?:\s|$)/i.test(label(el)));
+        const inMenu = candidates.filter(el => el.closest('[role="menu"],[role="dialog"]'));
+        const matches = inMenu.length ? inMenu : candidates;
+        const actionable = matches.filter(el => !matches.some(other => other !== el && el.contains(other)));
+        if (actionable.length > 1) throw new Error('Several Download controls are visible. Close other menus and open one photo.');
+        return actionable[0];
+      }, 'Download in the open photo menu');
       const href = download instanceof HTMLAnchorElement ? download.href : null;
       if (href && /^https:\/\//.test(href)) {
         document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
@@ -121,12 +128,12 @@
           const importControl = await until(() => {
             const found = controls().filter(el => /^(Computer|From computer|Import photos from your computer)$/i.test(label(el)));
             return found.length === 1 && found[0];
-          });
+          }, 'the import-from-computer menu item');
           importControl.click();
           inputs = await until(() => {
             const found = [...document.querySelectorAll('input[type=file]')].filter(el => !el.accept || /image|\.jp/i.test(el.accept));
             return found.length === 1 && found;
-          });
+          }, 'the Google Photos file picker');
         }
         guard(message, false);
         const transfer = new DataTransfer();
@@ -148,7 +155,7 @@
     if (message.command === 'trash') {
       // Single-photo viewer only. Never operate on the library's native multiselect.
       unique(/^(Delete|Move to trash|Move to bin)$/i).click();
-      const dialog = await until(() => [...document.querySelectorAll('[role=dialog]')].find(visible));
+      const dialog = await until(() => [...document.querySelectorAll('[role=dialog]')].find(visible), 'the move-to-trash confirmation dialog');
       if (!/(trash|bin)/i.test(dialog.textContent) || /permanently|delete forever/i.test(dialog.textContent)) throw new Error('Unexpected deletion dialog. Nothing confirmed.');
       guard(message);
       const confirm = unique(/^(Move to trash|Move to bin)$/i, dialog);
