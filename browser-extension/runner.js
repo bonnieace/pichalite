@@ -37,15 +37,19 @@ export class Runner {
       await this.workTab(first.account, first.route);
       for (let item of items) {
         if (this.paused) break;
+        let stage = 'preparing photo';
         assertAccount(first.account, item.account);
         try {
           if (item.state === 'selected') {
             item = {...item, state: 'downloading', error: ''}; await this.save(item);
+            stage = 'Opening original photo';
             await navigate(this.tabId, item.originalURL, item.account);
+            stage = 'Downloading original photo';
             const original = await download(this.tabId, item.originalURL, item.account);
             inspect(new Uint8Array(await original.arrayBuffer()));
             await putBlob(`${item.id}:original`, original);
             item = {...item, state: 'compressing', originalBytes: original.size}; await this.save(item);
+            stage = 'Compressing original photo';
             const result = await compress(original, quality);
             await putBlob(`${item.id}:output`, result.output);
             item = {...item, ...result, output: undefined, outputBytes: result.output.size, quality, state: 'compressed'};
@@ -54,19 +58,21 @@ export class Runner {
           if (this.paused) break;
           if (item.state === 'compressed') {
             const recentURL = `https://photos.google.com${item.route || ''}/recentlyadded`;
+            stage = 'Opening Recently added';
             const before = await navigate(this.tabId, recentURL, item.account);
             const output = await getBlob(`${item.id}:output`);
             if (!output || await sha256(output) !== item.outputHash) throw new Error('Local compressed file is missing or changed');
             // Save BEFORE submission; an interrupted upload is reconciled, never blindly retried.
             item = {...item, state: 'uploading', beforeLinks: before.links, uploadStartedAt: Date.now()}; await this.save(item);
+            stage = 'Uploading compressed replacement';
             await upload(this.tabId, item, output, outputName(item));
             item = {...item, state: 'uploaded'}; await this.save(item);
           }
           if (this.paused) break;
-          if (['uploaded', 'upload-uncertain'].includes(item.state)) await this.verify(item);
+          if (['uploaded', 'upload-uncertain'].includes(item.state)) { stage = 'Verifying replacement'; await this.verify(item); }
         } catch (error) {
           const state = item.state === 'uploading' ? 'upload-uncertain' : item.state === 'verifying' ? 'uploaded' : ['uploaded', 'upload-uncertain', 'compressed'].includes(item.state) ? item.state : 'failed';
-          await this.save({...item, state, error: error.message});
+          await this.save({...item, state, error: `${stage}: ${error.message}`});
         }
       }
     });

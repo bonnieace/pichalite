@@ -106,7 +106,13 @@ async function render() {
       actions.append(smallButton('Reconcile', () => runner.reconcile(item)));
       actions.append(smallButton('Link replacement', () => { linkedItem = item; $('replacement-url').value = ''; $('link-dialog').showModal(); }));
     }
-    if (item.state === 'failed') actions.append(smallButton('Retry', () => edit(() => putItem({...item, state: item.outputHash ? 'compressed' : 'selected', error: ''}))));
+    if (item.state === 'failed') actions.append(smallButton('Retry photo', async () => {
+      if (!$('metadata').checked) throw new Error('Review and accept the replacement notice before retrying.');
+      const fresh = {...item, state: item.outputHash ? 'compressed' : 'selected', error: ''};
+      await edit(() => putItem(fresh));
+      // Failed is only used before upload submission. Post-upload uncertainty is reconciled, never resubmitted.
+      await runner.process([fresh], Number($('quality').value) / 100);
+    }));
     // Removing local records never changes anything in Google Photos.
     actions.append(smallButton('Forget locally', async () => {
       if (!confirm('Remove this local batch record and temporary files? This does not change Google Photos.')) return;

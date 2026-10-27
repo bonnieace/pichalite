@@ -16,10 +16,10 @@
     if (outer.length !== 1) throw new Error(`Expected one ${pattern} control; found ${outer.length}. This preview supports English Google Photos controls.`);
     return outer[0];
   }
-  async function until(fn, timeout = 12000) {
+  async function until(fn, stage = 'the expected Google Photos control', timeout = 12000) {
     const end = Date.now() + timeout;
     while (Date.now() < end) { const value = fn(); if (value) return value; await sleep(150); }
-    throw new Error('Google Photos did not reach the expected state. Originals have not been automatically retried.');
+    throw new Error(`Timed out waiting for ${stage}. Google's page controls may have changed; originals were not modified or automatically retried.`);
   }
   function account() {
     const nodes = [...document.querySelectorAll('[aria-label*="Google Account"],a[href*="accounts.google.com/SignOutOptions"]')];
@@ -54,7 +54,7 @@
   host.id = 'pichalite-selection-toolbar';
   host.style.cssText = 'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:2147483647';
   const root = host.attachShadow({mode: 'closed'});
-  root.innerHTML = `<style>:host{font:14px system-ui}section{display:flex;gap:9px;align-items:center;max-width:95vw;flex-wrap:wrap;background:#112a24;color:#fff;padding:10px 14px;border-radius:18px;box-shadow:0 5px 28px #0004}button{font:inherit;border:0;border-radius:11px;padding:10px;background:#d1fa8c;color:#112a24;cursor:pointer}span{max-width:190px}button[aria-pressed=true]{background:#fff}</style><section><b>PichaLite</b><button id="select" aria-pressed="false">Select photos</button><button id="current">Add open photo</button><button id="open">Open PichaLite</button><span id="count" role="status">Local compression</span></section>`;
+  root.innerHTML = `<style>:host{font:13px Inter,system-ui,sans-serif}section{display:flex;gap:8px;align-items:center;justify-content:center;max-width:calc(100vw - 26px);flex-wrap:wrap;background:#faf7f0;color:#202d32;border:1px solid #dfdfd4;padding:10px 13px;border-radius:22px;box-shadow:0 12px 40px #202d3240}b{font-size:16px;letter-spacing:-.6px;margin-right:5px}button{font:inherit;border:1px solid #dfdfd4;border-radius:20px;padding:9px 12px;background:#fff8;color:#202d32;cursor:pointer}button#open{background:#d5502b;color:white;border-color:#d5502b}button[aria-pressed=true]{background:#f1d0b3;border-color:#d5502b}button:focus-visible{outline:2px solid #d5502b;outline-offset:3px}span{max-width:200px;color:#65716a;font-size:11px}</style><section><b>PichaLite</b><button id="select" aria-pressed="false">Select photos</button><button id="current">Add open photo</button><button id="open">Open PichaLite</button><span id="count" role="status">Local compression</span></section>`;
   const count = root.getElementById('count');
   root.getElementById('open').onclick = () => ext.runtime.sendMessage({type: 'open-panel'}).then(result => {
     if (!result?.ok) count.textContent = 'Click the PichaLite extension icon to open the panel';
@@ -88,7 +88,14 @@
       const menus = controls().filter(el => /^More options(?:\b|$)|^More$/i.test(label(el)));
       if (menus.length !== 1) throw new Error('Open one photo with its More options button visible.');
       menus[0].click();
-      const download = await until(() => { try { return unique(/^Download(?:\s|$)/i); } catch { return null; } });
+      const download = await until(() => {
+        const candidates = controls().filter(el => /^Download(?:\s|$)/i.test(label(el)));
+        const inMenu = candidates.filter(el => el.closest('[role="menu"],[role="dialog"]'));
+        const matches = inMenu.length ? inMenu : candidates;
+        const actionable = matches.filter(el => !matches.some(other => other !== el && el.contains(other)));
+        if (actionable.length > 1) throw new Error('Several Download controls are visible. Close other menus and open one photo.');
+        return actionable[0];
+      }, 'Download in the open photo menu');
       const href = download instanceof HTMLAnchorElement ? download.href : null;
       if (href && /^https:\/\//.test(href)) {
         document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}));
@@ -121,12 +128,12 @@
           const importControl = await until(() => {
             const found = controls().filter(el => /^(Computer|From computer|Import photos from your computer)$/i.test(label(el)));
             return found.length === 1 && found[0];
-          });
+          }, 'the import-from-computer menu item');
           importControl.click();
           inputs = await until(() => {
             const found = [...document.querySelectorAll('input[type=file]')].filter(el => !el.accept || /image|\.jp/i.test(el.accept));
             return found.length === 1 && found;
-          });
+          }, 'the Google Photos file picker');
         }
         guard(message, false);
         const transfer = new DataTransfer();
@@ -148,7 +155,7 @@
     if (message.command === 'trash') {
       // Single-photo viewer only. Never operate on the library's native multiselect.
       unique(/^(Delete|Move to trash|Move to bin)$/i).click();
-      const dialog = await until(() => [...document.querySelectorAll('[role=dialog]')].find(visible));
+      const dialog = await until(() => [...document.querySelectorAll('[role=dialog]')].find(visible), 'the move-to-trash confirmation dialog');
       if (!/(trash|bin)/i.test(dialog.textContent) || /permanently|delete forever/i.test(dialog.textContent)) throw new Error('Unexpected deletion dialog. Nothing confirmed.');
       guard(message);
       const confirm = unique(/^(Move to trash|Move to bin)$/i, dialog);

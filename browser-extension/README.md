@@ -1,4 +1,4 @@
-# PichaLite for Google Photos — 0.2.0 preview
+# PichaLite for Google Photos — 0.2.2 preview
 
 A desktop WebExtension for selecting photos in Google Photos,
 compressing them locally, uploading smaller copies, independently verifying the
@@ -14,9 +14,9 @@ Photos. Validate it with disposable copies before using personal originals.
 
 | Browser | Package / interface | Release status |
 | --- | --- | --- |
-| Chrome / Edge / Brave desktop | `0.2.0-chromium-preview.zip`; side panel when available, otherwise a workspace tab | Unpacked developer preview; store publication pending |
-| Firefox 142+ desktop | `0.2.0-firefox-preview.zip`; native sidebar | Temporary developer preview; Mozilla signing/publication pending |
-| Safari on Mac | `0.2.0-safari-source.zip`; workspace tab | Developer source only; macOS/Xcode packaging and Apple signing required |
+| Chrome / Edge / Brave desktop | `0.2.2-chromium-preview.zip`; side panel when available, otherwise a workspace tab | Unpacked developer preview; store publication pending |
+| Firefox 142+ desktop | `0.2.2-firefox-preview.zip`; native sidebar | Temporary developer preview; Mozilla signing/publication pending |
+| Safari on Mac | `0.2.2-safari-source.zip`; workspace tab | Developer source only; macOS/Xcode packaging and Apple signing required |
 
 The website's browser-aware `/extensions/` page chooses the appropriate preview
 and shows its installation steps. Official store links can replace the preview
@@ -205,3 +205,10 @@ Use five explicitly disposable, ordinary JPEG/PNG copies:
 
 Do not mark the preview production-ready until these checks pass. The fixture
 screenshot is generated under `test-results/` and intentionally excluded from git.
+
+## 0.2.2 changes (not automatically available in stores)
+
+- Side panel and photo-selection toolbar use the site's orange, cream and charcoal palette.
+- Generic Google Photos timeouts now name the missing control (Download menu, import menu, file picker or trash dialog).
+- A **Retry photo** action resumes only known pre-upload failures. Upload-uncertain and trash-uncertain records still require reconciliation or manual inspection.
+- These changes require submitting an updated store package; editing this branch does not update installed extensions.
