@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PichaLite · Google Photos</title><link rel="stylesheet" href="app.css"></head>
+<body>
+  <main>
+    <header><a class="brand" href="https://pichalite.co.ke/" target="_blank" rel="noreferrer">picha<span>lite</span></a><span class="preview">PREVIEW</span></header>
+    <section class="intro"><p class="eyebrow">YOUR PHOTOS. LIGHTER.</p><h1>Keep the memories.<br><em>Lose the weight.</em></h1><p>Select in Google Photos. Compress on your computer. Review originals after replacements are verified.</p></section>
+    <div class="account-line"><span class="dot"></span><span id="account">Open Google Photos to connect</span><button id="connect" class="text-button">Connect tab</button></div>
+    <section class="selection"><div class="section-top"><h2>Your selection <span id="selected-count">0</span></h2><button id="import" class="text-button">Add to batch</button></div><p>Use <b>Select photos</b> in the PichaLite toolbar on Google Photos. Click a photo again to remove it.</p></section>
+    <section class="settings"><label for="quality">Compression quality <output id="quality-value">82%</output></label><input id="quality" type="range" min="60" max="95" value="82"><p>Original dimensions stay intact. Opaque PNGs become JPEGs. Motion, transparent and unsupported photos are skipped.</p><label class="check"><input type="checkbox" id="metadata"><span>I understand replacements are new items. Albums, favourites, shared links, edits and Google-only dates may not carry over. Cloud deletion can affect synced devices.</span></label></section>
+    <div class="actions"><button id="start" class="primary">Compress & upload <span>↗</span></button><button id="pause" class="secondary" disabled>Pause</button></div>
+    <p class="small">Keep this panel open while processing, or <button id="open-tab" class="text-button">open a workspace tab</button>. Closing it pauses work; uncertain uploads need reconciliation.</p>
+    <div id="notice" role="status" aria-live="polite" hidden></div>
+    <section class="results"><div class="section-top"><h2>Your batch</h2><span id="progress-label">Ready when you are</span></div><progress id="progress" value="0" max="1"></progress><div class="metric"><strong id="saved">0 B</strong><span>smaller files<br><small>Not confirmed Google quota reclaimed</small></span></div><div id="items" class="items"></div><p id="empty">A little space for your next memory.<br>Your selected photos will appear here.</p></section>
+    <section class="cleanup"><h2>Originals stay until you decide.</h2><p>Only exact, independently downloaded replacements qualify. PichaLite rechecks both copies before moving an original to trash.</p><button id="cleanup" class="secondary" disabled>Review cleanup</button></section>
+    <footer>Local processing · No PichaLite upload server · No automatic emptying of trash</footer>
+  </main>
+  <dialog id="cleanup-dialog"><h2>Move verified originals to trash?</h2><p id="cleanup-summary"></p><p>Google Photos deletion can affect synced devices. This keeps compressed replacements and does not empty trash.</p><div class="actions"><button id="cancel-cleanup" class="secondary">Keep originals</button><button id="confirm-cleanup" class="primary">Move originals to trash</button></div></dialog>
+  <dialog id="link-dialog"><h2>Verify a replacement</h2><p>Open the uploaded copy in Google Photos and paste its individual photo URL. Its downloaded bytes must exactly match PichaLite’s compressed file.</p><label for="replacement-url">Replacement photo URL</label><input id="replacement-url" type="url" placeholder="https://photos.google.com/photo/…"><div class="actions"><button id="cancel-link" class="secondary">Cancel</button><button id="confirm-link" class="primary">Verify copy</button></div></dialog>
+  <script type="module" src="app.js"></script>
+</body></html>
