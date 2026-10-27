@@ -1,4 +1,4 @@
-# PichaLite for Google Photos — 0.2.0 preview
+# PichaLite for Google Photos — 0.2.2 preview
 
 A desktop WebExtension for selecting photos in Google Photos,
 compressing them locally, uploading smaller copies, independently verifying the
@@ -14,9 +14,9 @@ Photos. Validate it with disposable copies before using personal originals.
 
 | Browser | Package / interface | Release status |
 | --- | --- | --- |
-| Chrome / Edge / Brave desktop | `0.2.0-chromium-preview.zip`; side panel when available, otherwise a workspace tab | Unpacked developer preview; store publication pending |
-| Firefox 142+ desktop | `0.2.0-firefox-preview.zip`; native sidebar | Temporary developer preview; Mozilla signing/publication pending |
-| Safari on Mac | `0.2.0-safari-source.zip`; workspace tab | Developer source only; macOS/Xcode packaging and Apple signing required |
+| Chrome / Edge / Brave desktop | `0.2.2-chromium-preview.zip`; side panel when available, otherwise a workspace tab | Unpacked developer preview; store publication pending |
+| Firefox 142+ desktop | `0.2.2-firefox-preview.zip`; native sidebar | Temporary developer preview; Mozilla signing/publication pending |
+| Safari on Mac | `0.2.2-safari-source.zip`; workspace tab | Developer source only; macOS/Xcode packaging and Apple signing required |
 
 The website's browser-aware `/extensions/` page chooses the appropriate preview
 and shows its installation steps. Official store links can replace the preview
