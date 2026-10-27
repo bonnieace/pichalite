@@ -205,3 +205,10 @@ Use five explicitly disposable, ordinary JPEG/PNG copies:
 
 Do not mark the preview production-ready until these checks pass. The fixture
 screenshot is generated under `test-results/` and intentionally excluded from git.
+
+## 0.2.2 changes (not automatically available in stores)
+
+- Side panel and photo-selection toolbar use the site's orange, cream and charcoal palette.
+- Generic Google Photos timeouts now name the missing control (Download menu, import menu, file picker or trash dialog).
+- A **Retry photo** action resumes only known pre-upload failures. Upload-uncertain and trash-uncertain records still require reconciliation or manual inspection.
+- These changes require submitting an updated store package; editing this branch does not update installed extensions.
