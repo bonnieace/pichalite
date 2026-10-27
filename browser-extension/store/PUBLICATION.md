@@ -1,7 +1,7 @@
 # Store submission package
 
-Version 0.2.1 adds the established PichaLite photo-mark icons required for store
-submission. It keeps the runtime behaviour of the 0.2.0 preview.
+Version 0.2.2 retains the established PichaLite photo-mark icons required for store
+submission. It adopts the landing-page visual identity, clarifies missing Google Photos controls and enables one-click retry only for safe pre-upload failures. Existing submitted store packages will not change until a reviewed update is published.
 
 Build with `python3 scripts/build-icons.py` (Pillow required) and `npm run package`.
 Upload the **Chromium** ZIP to Chrome Web Store; the Firefox ZIP is for Mozilla.
